@@ -585,11 +585,26 @@
       });
       buildFilter();
       var c = FE.filter(function (f) { return f.name === "Copernicus"; })[0] || FE[0];
-      sel = c; showFeature(); requestDraw();
+      sel = c;
+      applyUrlParams();
+      showFeature(); requestDraw();
     }).catch(function () {
       $("fName").textContent = "FEATURES NOT LOADED";
       $("fSub").textContent = "Open this page through a web server so data/features/features.json can load.";
     });
+  }
+  // Deep links, used by the Lunar 100 page: ?f=name&lat=..&lon=..&zoom=..&date=ISO
+  function applyUrlParams() {
+    var p = new URLSearchParams(location.search), name = p.get("f"), lat = parseFloat(p.get("lat")), lon = parseFloat(p.get("lon"));
+    var z = parseFloat(p.get("zoom")), dstr = p.get("date");
+    if (dstr) { var d = new Date(dstr); if (!isNaN(d)) { setLive(false); setDate(d); } }
+    if (name) {
+      var ln = name.toLowerCase(), hit = FE.filter(function (f) { return f.lname === ln; })[0];
+      if (!hit && isFinite(lat) && isFinite(lon)) hit = { name: name, code: "", type: "Lunar 100 target", lat: lat, lon: lon, diam: 0, quad: "", origin: "", status: "", info: "Position from the Lunar 100 list.", id: "L100-" + ln, lname: ln };
+      if (hit) sel = hit;
+    }
+    if (isFinite(lat) && isFinite(lon)) { view.lon0 = lon; view.lat0 = lat; view.free = true; }
+    if (isFinite(z)) setZoom(z);
   }
   function findMatches(q) {
     q = q.trim().toLowerCase();

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lunar 100 | Observer's Moon Atlas</title>
+<meta name="description" content="The Lunar 100: Charles Wood's list of 100 lunar features, with atlas charts, live Sun lighting for any date, and an observing log.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e16'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%232F78BD' stroke-width='2.5'/%3E%3Cpath d='M16 7a9 9 0 0 0 0 18z' fill='%232F78BD'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Audiowide&family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="lunar100.css">
+</head>
+<body>
+<a class="skip" href="#tbl">Skip to the list</a>
+
+<header class="site-head">
+  <span class="asterism" role="img" aria-label="Pleiades asterism"></span>
+  <h1 class="wordmark">LUNAR 100</h1>
+  <nav class="menubar" aria-label="Site">
+    <a href="index.html">Moon atlas</a>
+    <a href="https://astro.thgnetworks.com">Henderson Astronomy</a>
+  </nav>
+  <span class="spacer"></span>
+  <button id="themeToggle" class="round" type="button" aria-label="Switch colour theme" title="Switch colour theme"><span aria-hidden="true">◑</span></button>
+</header>
+
+<section class="bar" aria-label="Controls">
+  <label>Date and time
+    <input id="dt" type="datetime-local" step="60">
+  </label>
+  <button id="today" type="button" class="btn">Today</button>
+  <label>Show
+    <select id="fSeen"><option value="all">All</option><option value="unseen">Unseen</option><option value="seen">Seen</option></select>
+  </label>
+  <label class="chk"><input id="fLit" type="checkbox"> Well lit and visible now</label>
+  <label class="chk"><input id="fWeek" type="checkbox"> Good in the next 7 nights</label>
+  <input id="q" type="search" placeholder="Search name or note" aria-label="Search the list">
+  <span class="progress" id="progress"></span>
+  <button id="expCsv" type="button" class="btn">Export CSV</button>
+  <button id="expTxt" type="button" class="btn">Export text</button>
+  <button id="printBtn" type="button" class="btn">Print</button>
+</section>
+
+<main class="l100">
+  <div class="tablewrap">
+    <table id="tbl">
+      <thead>
+        <tr>
+          <th scope="col" data-k="seen" title="Seen">&#10003;</th>
+          <th scope="col" data-k="L">L</th>
+          <th scope="col" data-k="name">Feature</th>
+          <th scope="col" data-k="diam">Km</th>
+          <th scope="col" data-k="rukl">R&uuml;kl</th>
+          <th scope="col" data-k="atlas21">21st C.</th>
+          <th scope="col" data-k="north">North</th>
+          <th scope="col" data-k="sun" title="Sun elevation at the feature now">Sun</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <p class="hint" id="count"></p>
+  </div>
+
+  <aside class="detail" id="detail" aria-label="Feature detail">
+    <h2 id="dName">Select a feature</h2>
+    <p class="sub" id="dSig">Click a row in the list.</p>
+    <dl id="dFacts"></dl>
+    <h3>Lighting at the chosen time</h3>
+    <dl id="dSun"></dl>
+    <p id="dNote"></p>
+    <h3>My observation</h3>
+    <label class="chk"><input id="oSeen" type="checkbox"> Seen</label>
+    <label>Date seen <input id="oDate" type="date"></label>
+    <label>Notes <textarea id="oNote" rows="4" placeholder="Telescope, seeing, what you saw"></textarea></label>
+    <p class="hint">Saved in this browser only, on this device.</p>
+    <p class="links"><a id="goAtlas" href="index.html" class="btn">Show on the atlas</a></p>
+  </aside>
+</main>
+
+<footer class="foot">
+  <p>The Lunar 100 is Charles A. Wood's list, <em>Sky &amp; Telescope</em>, April 2004. Chart numbers: R&uuml;kl, <em>Atlas of the Moon</em>, and Wood and Collins, <em>21st Century Atlas of the Moon</em> (21st C.). North: page references to Gerald North, <em>Observing the Moon</em>. Lighting and visibility are computed with astronomy-engine (MIT) and Meeus ch. 53, from the position of the feature, so they are only approximate for features that are large or have no single point.</p>
+  <p>Part of <a href="index.html">Observer's Moon Atlas</a>. GPL-3.0-or-later.</p>
+</footer>
+
+<script src="vendor/astronomy.browser.min.js"></script>
+<script src="ephem.js"></script>
+<script src="lunar100.js"></script>
+</body>
+</html>

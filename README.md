@@ -5,6 +5,7 @@ lit by the real Sun for any date and time, with libration, phase and terminator,
 features, an ephemeris tab, notes, distance measuring, and telescope, camera and eyepiece field frames.
 
 **Open it:** `index.html` (https://thg4web.github.io/oma/index.html once GitHub Pages is on).
+**Also:** `lunar100.html`, the Lunar 100 observing list with live Sun lighting and an observing log.
 **Run locally:** `python3 -m http.server 8080` from this folder, then open http://localhost:8080/.
 
 **Status:** early development. Not every Virtual Moon Atlas function is built yet. Lighting is a Sun on a
