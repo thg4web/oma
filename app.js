@@ -54,8 +54,8 @@
 
   /* ---- layers and tiles --------------------------------------------------- */
   var LAYERS = [
-    { id: "wac", name: "WAC, high Sun (flat, lit by the Sun setting)", short: "WAC", base: "../data/tiles/wac/", relit: true },
-    { id: "lowsun", name: "WAC, low Sun (relief, shadows baked in)", short: "WAC low Sun", base: "../data/tiles/wac_lowsun/", relit: false }
+    { id: "wac", name: "WAC, high Sun (flat, lit by the Sun setting)", short: "WAC", base: "data/tiles/wac/", relit: true },
+    { id: "lowsun", name: "WAC, low Sun (relief, shadows baked in)", short: "WAC low Sun", base: "data/tiles/wac_lowsun/", relit: false }
   ];
   var TILE_PX = 512, DEEP_Z = 5, TCOLS = 64, TROWS = 32;
   var layer = LAYERS[0], G = null, TIL = new Array(TCOLS * TROWS), TILFAIL = {}, tilePending = {}, pendingN = 0;
@@ -181,7 +181,7 @@
       requestDraw(); if (done) done();
     };
     im.onerror = function () { ov.loading = false; $("layerNote").textContent = "Geology overlay could not be loaded."; $("ovOn").checked = false; ov.on = false; };
-    im.src = "../data/overlays/geology-usgs-4k.jpg";
+    im.src = "data/overlays/geology-usgs-4k.jpg";
   }
 
   /* ---- view geometry ---------------------------------------------------------- */
@@ -579,7 +579,7 @@
 
   /* ---- features: load, search, list -------------------------------------------------------------- */
   function loadFeatures() {
-    fetch("../data/features/features.json").then(function (r) { return r.json(); }).then(function (j) {
+    fetch("data/features/features.json").then(function (r) { return r.json(); }).then(function (j) {
       FE = j.rows.map(function (r) {
         return { name: r[0], code: r[1], type: r[2], lat: r[3], lon: r[4], diam: r[5], quad: r[6], origin: r[7], status: r[8], info: r[9], id: r[10], lname: r[0].toLowerCase() };
       });
