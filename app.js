@@ -44,7 +44,7 @@
                scale: true, shortNames: false, marks: true, centerLabels: false, gridStep: 30 };
   var ov = { on: false, opacity: 0.5, data: null, w: 0, h: 0, loading: false };
   var S = { date: new Date(), live: false, st: null, sunVec: [0, 0, 1] };
-  var FE = [], sel = null, matches = [], matchIdx = -1;
+  var FE = [], sel = null, matches = [], matchIdx = -1, ATLAS = {};
   var measure = { on: false, pts: [] };
   // Default observer is Greenwich, a neutral place. Visitors set their own, saved in their browser only.
   var obs = { lat: parseFloat(lsGet("oma-obs-lat", "51.48")), lon: parseFloat(lsGet("oma-obs-lon", "0")) };
@@ -471,6 +471,12 @@
     rows($("fSize"), [["Diameter", f.diam ? fmtKm(f.diam) : "not given"]]);
     $("fOrigin").textContent = f.origin || "Not given in the gazetteer.";
     $("fInfo").textContent = f.info || "";
+    var at = ATLAS[f.id] || {}, ar = [];
+    function ref(label, e, pre) { if (e) ar.push([label, (pre || "") + e.v.join(", ") + (e.q === "f" ? " (check)" : "")]); }
+    ref("Rükl chart", at.r); ref("21st Century Atlas", at.a); ref("North, Observing the Moon", at.n, "pp. ");
+    if (!ar.length) ar.push(["References", "none found yet"]);
+    rows($("fAtlas"), ar);
+    $("fAtlasNote").textContent = "From the printed indexes, read by OCR and still being verified against the books. (check) means the name matched approximately.";
     $("notesName").textContent = "Notes: " + f.name;
     $("notes").value = ""; renderNotes();
     renderNeighbors(f);
@@ -578,6 +584,9 @@
   }
 
   /* ---- features: load, search, list -------------------------------------------------------------- */
+  function loadAtlas() {
+    fetch("data/atlas/atlas-index.json").then(function (r) { return r.json(); }).then(function (j) { ATLAS = j.features || {}; if (sel) showFeature(); }).catch(function () {});
+  }
   function loadFeatures() {
     fetch("data/features/features.json").then(function (r) { return r.json(); }).then(function (j) {
       FE = j.rows.map(function (r) {
@@ -912,6 +921,7 @@
   setDate(new Date());
   loadLayer(LAYERS[0]);
   loadFeatures();
+  loadAtlas();
   fovFill();
   resize();
   setInterval(function () { if (!S.live) return; }, 60000);
