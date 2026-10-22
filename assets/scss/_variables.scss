@@ -1,0 +1,15 @@
+// Colors -- customize per project
+$bg: #ffffff;
+$text: #1a1a1a;
+$accent: #0066cc;
+$accent-hover: darken($accent, 10%);
+$border: rgba(0, 0, 0, 0.1);
+
+// Typography -- customize per project
+$font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+$font-heading: $font-body;
+$font-mono: 'SFMono-Regular', Consolas, monospace;
+
+// Layout
+$max-width: 1080px;
+$padding: 28px;

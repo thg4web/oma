@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Observer's Moon Atlas</title>
+<meta name="description" content="Observer's Moon Atlas: an interactive Moon atlas for the browser. Prototype.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e16'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%232F78BD' stroke-width='2.5'/%3E%3Cpath d='M16 7a9 9 0 0 0 0 18z' fill='%232F78BD'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Audiowide&family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<a class="skip" href="#globe">Skip to the globe</a>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-center" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+  <symbol id="i-flip-ns" viewBox="0 0 24 24"><path d="M3 12h18M8 8l4-4 4 4M8 16l4 4 4-4"/></symbol>
+  <symbol id="i-flip-ew" viewBox="0 0 24 24"><path d="M12 3v18M8 8l-4 4 4 4M16 8l4 4-4 4"/></symbol>
+  <symbol id="i-terminator" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18 5 9 0 0 0 0-18z"/></symbol>
+  <symbol id="i-libration" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M4 12h3M17 12h3M12 4v3M12 17v3"/><circle cx="14" cy="10" r="1.6"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18M5 7h14M5 17h14"/></symbol>
+  <symbol id="i-labels" viewBox="0 0 24 24"><path d="M4 18 10 5l6 13M6.5 13h7M19 6v12"/></symbol>
+  <symbol id="i-ruler" viewBox="0 0 24 24"><path d="m3 17 14-14 4 4L7 21zM8 12l2 2M11 9l2 2M14 6l2 2"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+  <symbol id="i-fov" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.5"/><path d="M8 6V4M16 6V4"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5zM3 13l9 5 9-5"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><path d="M4 5h16l-6 8v6l-4-2v-4z"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></symbol>
+</svg>
+
+<header class="site-head">
+  <span class="asterism" role="img" aria-label="Pleiades asterism"></span>
+  <h1 class="wordmark">OBSERVER'S MOON ATLAS</h1>
+  <nav class="menubar" aria-label="Menu">
+    <button type="button" id="mAbout">About &amp; credits</button>
+    <a href="https://astro.thgnetworks.com">Henderson Astronomy</a>
+  </nav>
+  <span class="spacer"></span>
+  <button id="tPanel" class="theme-toggle" type="button" aria-pressed="false" aria-label="Hide or show the information panel" title="Hide or show the information panel"><span aria-hidden="true">&#9703;</span></button>
+  <button id="menuToggle" class="theme-toggle menu-toggle" type="button" aria-expanded="false" aria-controls="toolbar" aria-label="Show tools" title="Tools"><span aria-hidden="true">&#9776;</span></button>
+  <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch colour theme" title="Switch colour theme"><span aria-hidden="true">◑</span></button>
+</header>
+
+<div class="toolbar" id="toolbar" role="toolbar" aria-label="Globe tools">
+  <div class="tool-group">
+    <label class="slider-label">Zoom
+      <input id="zoom" type="range" min="1" max="8" step="0.05" value="1">
+      <output id="zoomOut">1:1</output>
+    </label>
+    <select id="zoomPre" aria-label="Zoom presets">
+      <option value="">Zoom to</option><option value="1">1:1</option><option value="2">2x</option><option value="4">4x</option><option value="8">8x</option>
+    </select>
+    <button class="tool-more-btn" id="tFull" type="button" title="Whole Moon, centered as seen from Earth now">Full globe</button>
+  </div>
+  <div class="tool-group datebar">
+    <canvas id="phaseIcon" width="30" height="30" title="Moon phase" aria-label="Moon phase"></canvas>
+    <input id="dt" type="datetime-local" step="60" aria-label="Date and time (your local time)">
+    <button class="tool" id="dtPrev" type="button" title="Step back" aria-label="Step back">&#9664;</button>
+    <button class="tool" id="dtNext" type="button" title="Step forward" aria-label="Step forward">&#9654;</button>
+    <select id="dtStep" aria-label="Step size">
+      <option value="60000">1 min</option>
+      <option value="3600000" selected>1 hour</option>
+      <option value="86400000">1 day</option>
+      <option value="604800000">7 days</option>
+      <option value="2551442976">1 lunation</option>
+    </select>
+    <button class="tool-more-btn" id="dt0h" type="button" title="Set the time to 00:00 on this date">0h</button>
+    <button class="tool-more-btn" id="dtNow" type="button" title="Set to the current time">Now</button>
+    <button class="tool-more-btn" id="dtLive" type="button" aria-pressed="false" title="Follow the clock">Live</button>
+  </div>
+  <div class="tool-group">
+    <button class="tool" id="tCenter" type="button" title="Center on selected feature" aria-label="Center on selected feature"><svg><use href="#i-center"/></svg></button>
+    <button class="tool" id="tTerm" type="button" aria-pressed="true" title="Show phase and terminator" aria-label="Show phase and terminator"><svg><use href="#i-terminator"/></svg></button>
+    <button class="tool" id="tLib" type="button" aria-pressed="true" title="Show libration (view as seen from Earth now)" aria-label="Show libration"><svg><use href="#i-libration"/></svg></button>
+    <button class="tool" id="tGrid" type="button" aria-pressed="false" title="Show coordinate grid" aria-label="Show coordinate grid"><svg><use href="#i-grid"/></svg></button>
+    <button class="tool" id="tLabels" type="button" aria-pressed="true" title="Show labels" aria-label="Show labels"><svg><use href="#i-labels"/></svg></button>
+    <label class="slider-label">Labels
+      <input id="density" type="range" min="0" max="1" step="0.05" value="0.5" aria-label="Label density">
+    </label>
+  </div>
+  <div class="tool-group tool-toggle">
+    <button class="tool-more-btn" id="toolsToggle" type="button" aria-expanded="false" aria-controls="toolMore">More tools</button>
+  </div>
+  <div class="tool-more" id="toolMore">
+    <div class="tool-group">
+      <button class="tool" id="tMeasure" type="button" aria-pressed="false" title="Measure a distance (click two points, Esc to clear)" aria-label="Measure distance"><svg><use href="#i-ruler"/></svg></button>
+      <button class="tool" id="tSnap" type="button" title="Save a picture of the view" aria-label="Save picture"><svg><use href="#i-camera"/></svg></button>
+      <button class="tool" id="tFov" type="button" aria-pressed="false" title="Telescope, camera and eyepiece fields" aria-label="Field of view frames"><svg><use href="#i-fov"/></svg></button>
+      <button class="tool" id="tLayers" type="button" aria-pressed="false" title="Map layers" aria-label="Map layers"><svg><use href="#i-layers"/></svg></button>
+      <button class="tool" id="tFilter" type="button" aria-pressed="false" title="Choose which feature types are labelled" aria-label="Filter feature types"><svg><use href="#i-filter"/></svg></button>
+    </div>
+    <div class="tool-group">
+      <button class="tool" id="tFlipNS" type="button" aria-pressed="false" title="Flip north / south" aria-label="Flip north and south"><svg><use href="#i-flip-ns"/></svg></button>
+      <button class="tool" id="tFlipEW" type="button" aria-pressed="false" title="Flip east / west" aria-label="Flip east and west"><svg><use href="#i-flip-ew"/></svg></button>
+    </div>
+    <div class="tool-group opts">
+      <label class="slider-label"><input id="oScale" type="checkbox" checked> Scale</label>
+      <label class="slider-label"><input id="oShort" type="checkbox"> Short names</label>
+      <label class="slider-label"><input id="oMarks" type="checkbox" checked> Marks</label>
+      <label class="slider-label"><input id="oCenter" type="checkbox"> Centered labels</label>
+      <label class="slider-label">Grid
+        <select id="gridStep" aria-label="Grid spacing"><option value="10">10&deg;</option><option value="15">15&deg;</option><option value="30" selected>30&deg;</option></select>
+      </label>
+    </div>
+    <div class="tool-group">
+      <label class="slider-label">Brightness
+        <input id="bright" type="range" min="0.6" max="3" step="0.05" value="1.6">
+      </label>
+    </div>
+    <div class="tool-group">
+      <label class="slider-label"><input id="sunManual" type="checkbox"> Manual Sun</label>
+      <label class="slider-label"><svg style="width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round" aria-hidden="true"><use href="#i-sun"/></svg>
+        <input id="sun" type="range" min="-160" max="160" step="1" value="35" disabled>
+        <output id="sunOut">auto</output>
+      </label>
+    </div>
+  </div>
+</div>
+
+<div class="workspace">
+  <section class="stage" aria-label="Moon globe">
+    <canvas id="globe" aria-label="Interactive Moon globe. Click a labelled feature to select it. Drag to pan."></canvas>
+    <span class="proto-flag" id="protoFlag">Prototype</span>
+    <div class="readout" id="readout" hidden></div>
+
+    <div class="pop" id="popLayers" hidden role="dialog" aria-label="Map layers">
+      <h3>Map layers</h3>
+      <label>Base map
+        <select id="layerBase"></select>
+      </label>
+      <p class="hint" id="layerNote"></p>
+      <label class="chk"><input type="checkbox" id="ovOn"> Geology overlay (USGS Unified Geologic Map, CC0)</label>
+      <label>Overlay opacity <input type="range" id="ovOpacity" min="0.1" max="1" step="0.05" value="0.5"></label>
+      <p class="hint">Colours show geologic units. Fortezzo, Spudis and Harrel (2020), USGS.</p>
+    </div>
+
+    <div class="pop" id="popFilter" hidden role="dialog" aria-label="Feature types">
+      <h3>Feature types</h3>
+      <div id="filterList"></div>
+      <div class="pop-actions"><button type="button" id="filtAll">All</button><button type="button" id="filtNone">None</button></div>
+    </div>
+
+    <div class="pop" id="popFov" hidden role="dialog" aria-label="Field of view">
+      <h3>Field of view</h3>
+      <label>Frame
+        <select id="fovPreset"></select>
+      </label>
+      <div id="fovCustom">
+        <label>Focal length (mm) <input id="fovFl" type="number" min="1" step="1"></label>
+        <label>Sensor pixels W <input id="fovPw" type="number" min="1" step="1"></label>
+        <label>Sensor pixels H <input id="fovPh" type="number" min="1" step="1"></label>
+        <label>Pixel size (&micro;m) <input id="fovPs" type="number" min="0.1" step="0.01"></label>
+      </div>
+      <div id="fovEye" hidden>
+        <label>Telescope focal length (mm) <input id="eyeScope" type="number" min="1" step="1"></label>
+        <label>Eyepiece focal length (mm) <input id="eyeFl" type="number" min="1" step="0.5"></label>
+        <label>Eyepiece apparent field (&deg;) <input id="eyeAfov" type="number" min="1" step="1"></label>
+      </div>
+      <label>Rotation (&deg;) <input id="fovRot" type="number" min="-180" max="180" step="1" value="0"></label>
+      <p class="hint" id="fovInfo"></p>
+      <div class="pop-actions"><button type="button" id="fovOff">Hide frame</button></div>
+    </div>
+  </section>
+
+  <aside class="side" aria-label="Feature panel">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabInfo" aria-selected="true" aria-controls="paneInfo" type="button">Information</button>
+      <button role="tab" id="tabNotes" aria-selected="false" aria-controls="paneNotes" type="button">Notes</button>
+      <button role="tab" id="tabEphem" aria-selected="false" aria-controls="paneEphem" type="button">Ephemeris</button>
+      <button role="tab" id="tabList" aria-selected="false" aria-controls="paneList" type="button">In view</button>
+    </div>
+
+    <div class="tab-body info" id="paneInfo" role="tabpanel" aria-labelledby="tabInfo">
+      <nav class="jump" aria-label="Jump to section">
+        <a href="#secIdentity">Identity</a><a href="#secPosition">Position</a><a href="#secSize">Size</a><a href="#secSun">Sun here</a><a href="#secOrigin">Name origin</a>
+      </nav>
+      <h2 class="feature-name" id="fName">LOADING</h2>
+      <p class="feature-sub" id="fSub"></p>
+      <h3 id="secIdentity">Identity</h3>
+      <dl id="fIdentity"></dl>
+      <h3 id="secPosition">Position</h3>
+      <dl id="fPosition"></dl>
+      <h3 id="secSize">Size</h3>
+      <dl id="fSize"></dl>
+      <h3 id="secSun">Sun here, at the chosen time</h3>
+      <dl id="fSun"></dl>
+      <p id="fSunNote"></p>
+      <h3 id="secNeighbor">Neighbors</h3>
+      <ul class="flist" id="fNeighbors"></ul>
+      <h3 id="secOrigin">Name origin</h3>
+      <p id="fOrigin"></p>
+      <p class="caveat" id="fInfo"></p>
+    </div>
+
+    <div class="tab-body" id="paneNotes" role="tabpanel" aria-labelledby="tabNotes" hidden>
+      <h3 class="eph-h" id="notesName" style="margin-top:0;border:0;padding:0">Notes</h3>
+      <select id="noteType" aria-label="Note type"><option value="info">New information note</option><option value="obs">New observation note</option></select>
+      <textarea id="notes" class="notes-area" aria-label="Note text" placeholder="Write a note about this feature"></textarea>
+      <div class="pop-actions note-actions"><button type="button" id="noteSave">Save note</button><button type="button" id="noteNew">Clear</button></div>
+      <ul class="nlist" id="nlist"></ul>
+      <p class="hint">Saved in this browser only, on this device. An observation note records the date and time you have set.</p>
+    </div>
+
+    <div class="tab-body" id="paneEphem" role="tabpanel" aria-labelledby="tabEphem" hidden>
+      <div class="obs">
+        <label>Latitude <input id="obsLat" type="number" step="0.01" min="-90" max="90"></label>
+        <label>Longitude <input id="obsLon" type="number" step="0.01" min="-180" max="180"></label>
+        <button type="button" id="obsGeo" class="tool-more-btn">Use my location</button>
+      </div>
+      <dl id="ephTable" class="eph"></dl>
+      <h3 class="eph-h">Phases and libration</h3>
+      <div class="obs">
+        <button type="button" id="phPrev" class="tool-more-btn">&#9664; Previous phase</button>
+        <button type="button" id="phNext" class="tool-more-btn">Next phase &#9654;</button>
+      </div>
+      <ul class="flist" id="phaseList"></ul>
+      <div class="obs">
+        <button type="button" id="libEast" class="tool-more-btn">Next greatest east libration</button>
+        <button type="button" id="libWest" class="tool-more-btn">Next greatest west libration</button>
+      </div>
+      <p class="hint">Times are in your local time. Positions from astronomy-engine, libration and Sun from Meeus ch. 53 (optical libration only).</p>
+    </div>
+
+    <div class="tab-body" id="paneList" role="tabpanel" aria-labelledby="tabList" hidden>
+      <p class="hint" id="listHint"></p>
+      <ul class="flist" id="flist"></ul>
+    </div>
+
+    <div class="findbar">
+      <input id="find" type="search" list="findList" placeholder="Find a feature" aria-label="Find a feature" autocomplete="off">
+      <datalist id="findList"></datalist>
+      <button id="findBtn" type="button">Find</button>
+      <button id="nextBtn" type="button">Next</button>
+    </div>
+  </aside>
+</div>
+
+<footer class="statusbar" aria-live="off">
+  <span><b>Longitude:</b> <span id="sLon">&mdash;</span></span>
+  <span><b>Latitude:</b> <span id="sLat">&mdash;</span></span>
+  <span><b>Elevation:</b> <span id="sElev">&mdash;</span></span>
+  <span><b>Date:</b> <span id="sDate"></span></span>
+  <span><b>Time:</b> <span id="sTime"></span></span>
+  <span><b>Field:</b> <span id="sField"></span></span>
+  <span><b>Level:</b> <span id="sLevel">loading</span></span>
+</footer>
+
+<dialog id="aboutDlg" class="about">
+  <h2>About &amp; credits</h2>
+  <p><strong>Observer's Moon Atlas</strong> is a free, open-source web Moon atlas in the spirit of Virtual Moon Atlas. Code: GPL-3.0-or-later, see LICENSE and NOTICE.</p>
+  <ul>
+    <li><strong>Imagery:</strong> LRO WAC mosaic, LROC / ASU / NASA (public data). Tiles prepared for the web from the texture slices distributed with Virtual Moon Atlas, with thanks to Christian Legrand and Patrick Chevalley.</li>
+    <li><strong>Feature names, positions, sizes and name origins:</strong> IAU / USGS Gazetteer of Planetary Nomenclature (IAU 2024 edition).</li>
+    <li><strong>Ephemeris:</strong> <a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener">astronomy-engine</a> by Don Cross, MIT license. Selenographic Sun and libration after Meeus, <em>Astronomical Algorithms</em>, ch. 53.</li>
+    <li><strong>Inspiration:</strong> Virtual Moon Atlas by Christian Legrand and Patrick Chevalley, <a href="https://www.ap-i.net" target="_blank" rel="noopener">ap-i.net</a>.</li>
+    <li><strong>Site skin:</strong> Henderson Astronomy, <a href="https://astro.thgnetworks.com">astro.thgnetworks.com</a>.</li>
+  </ul>
+  <h3>How to use</h3>
+  <ul>
+    <li>Drag the globe to pan, use the wheel or the zoom slider to zoom. Click a label to read about the feature.</li>
+    <li>Set any date and time with the date box, or press Now or Live. The Sun, phase and libration follow it.</li>
+    <li>Find searches all named features. The In view tab lists what you are looking at.</li>
+    <li>More tools: distance measuring, a picture of the view, telescope and camera frames, layers and labels.</li>
+  </ul>
+  <p class="hint">Development build.</p>
+  <form method="dialog"><button class="tool-more-btn" value="close">Close</button></form>
+</dialog>
+
+<script src="vendor/astronomy.browser.min.js"></script>
+<script src="ephem.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

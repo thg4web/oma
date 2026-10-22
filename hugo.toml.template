@@ -1,0 +1,30 @@
+baseURL = '{{BASE_URL}}'
+languageCode = 'en-us'
+title = '{{PROJECT_NAME}}'
+theme = '{{THEME}}'
+
+enableRobotsTXT = true
+enableGitInfo = false
+summaryLength = 40
+
+[frontmatter]
+  lastmod = ['last_updated', ':fileModTime']
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
+[params]
+  description = "{{DESCRIPTION}}"
+  author = "{{AUTHOR}}"
+
+[taxonomies]
+  tag = "tags"
+  category = "categories"
+
+[menu]
+  [[menu.main]]
+    name = "Home"
+    url = "/"
+    weight = 1

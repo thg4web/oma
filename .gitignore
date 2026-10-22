@@ -1,0 +1,27 @@
+public/
+resources/
+.hugo_build.lock
+.DS_Store
+*.tmp
+*.bak
+*.orig
+*.swp
+*.swo
+*~
+
+# Project management & working files - local only, never published (matches luna2/astro)
+CLAUDE.md
+project/
+memory/
+notes/
+drafts/
+scratch/
+.archived/
+.claude/
+
+# Large source rasters and generated tiles
+data/source/
+data/tiles/
+
+# VMA-derived development data, not for publication until permission (see project/docs/data-sources.md)
+data/dev/
