@@ -117,6 +117,22 @@ a { color: var(--accent); }
   border-radius: 8px;
 }
 .menubar button:hover, .menubar a:hover { color: var(--ink); background: var(--panel-2); }
+.menubar .drop { position: relative; }
+.menubar .drop > summary {
+  list-style: none; cursor: pointer; color: var(--ink-dim);
+  padding: 0.35rem 0.6rem; border-radius: 8px;
+}
+.menubar .drop > summary::-webkit-details-marker { display: none; }
+.menubar .drop > summary::after { content: " \25BE"; }
+.menubar .drop > summary:hover, .menubar .drop[open] > summary { color: var(--ink); background: var(--panel-2); }
+.drop-list {
+  position: absolute; top: 100%; left: 0; z-index: 30; min-width: 11rem; margin-top: 0.2rem;
+  display: flex; flex-direction: column; padding: 0.25rem;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+}
+.drop-list a, .drop-list .stub { display: flex; justify-content: space-between; gap: 1rem; white-space: nowrap; }
+.drop-list .stub { color: var(--ink-faint); padding: 0.35rem 0.6rem; cursor: default; }
+.drop-list .stub small { font-size: 0.6rem; letter-spacing: 0.1em; text-transform: uppercase; align-self: center; }
 .spacer { flex: 1; }
 .theme-toggle {
   flex: none;

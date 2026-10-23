@@ -43,7 +43,17 @@
     <button type="button" id="mAbout">About &amp; credits</button>
     <button type="button" id="mGlossary">Glossary</button>
     <button type="button" id="mEncyclopedia">Encyclopedia</button>
-    <a href="lunar100.html">Lunar 100</a>
+    <details class="drop" id="mApplets">
+      <summary>Lunlets</summary>
+      <div class="drop-list">
+        <a href="lunar100.html">Lunar 100</a>
+        <span class="stub" aria-disabled="true" title="Not built yet">Photo browser<small>soon</small></span>
+        <span class="stub" aria-disabled="true" title="Not built yet">Database<small>soon</small></span>
+        <span class="stub" aria-disabled="true" title="Not built yet">Web links<small>soon</small></span>
+        <span class="stub" aria-disabled="true" title="Not built yet">Calculator<small>soon</small></span>
+        <span class="stub" aria-disabled="true" title="Not built yet">Notes<small>soon</small></span>
+      </div>
+    </details>
     <a href="https://astro.thgnetworks.com">Henderson Astronomy</a>
   </nav>
   <span class="spacer"></span>
@@ -302,7 +312,7 @@
 
     <div class="tab-body info" id="paneInfo" role="tabpanel" aria-labelledby="tabInfo">
       <nav class="jump" aria-label="Jump to section">
-        <a href="#secIdentity">Identity</a><a href="#secPosition">Position</a><a href="#secSize">Size</a><a href="#secSun">Sun here</a><a href="#secAtlas">Atlases</a><a href="#secOrigin">Name origin</a>
+        <a href="#secIdentity">Identity</a><a href="#secPosition">Position</a><a href="#secSize">Size</a><a href="#secDesc">Description</a><a href="#secSun">Sun here</a><a href="#secAtlas">Atlases</a><a href="#secOrigin">Name origin</a>
       </nav>
       <h2 class="feature-name" id="fName">LOADING</h2>
       <p class="feature-sub" id="fSub"></p>
@@ -313,6 +323,10 @@
       <dl id="fPosition"></dl>
       <h3 id="secSize">Size</h3>
       <dl id="fSize"></dl>
+      <div id="fDescWrap" hidden>
+      <h3 id="secDesc">Description</h3>
+      <dl id="fDesc"></dl>
+      </div>
       <h3 id="secSun">Sun here, at the chosen time</h3>
       <dl id="fSun"></dl>
       <p id="fSunNote"></p>

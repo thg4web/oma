@@ -632,6 +632,13 @@
     $("phaseIcon").title = "Moon " + (S.st.illum * 100).toFixed(0) + "% illuminated";
   }
 
+  // Applets menu: close on an outside click or Esc
+  (function () {
+    var d = $("mApplets"); if (!d) return;
+    document.addEventListener("click", function (e) { if (d.open && !d.contains(e.target)) d.open = false; });
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") d.open = false; });
+  })();
+
   /* ---- feature panel ----------------------------------------------------------------------- */
   function showFeature() {
     var f = sel;
@@ -643,6 +650,7 @@
     rows($("fSize"), [["Diameter", f.diam ? fmtKm(f.diam) : "not given"]]);
     rows($("fRecord"), [["name", f.name], ["code", f.code], ["type", f.type], ["latitude", String(f.lat)], ["longitude", String(f.lon)], ["diameter (km)", f.diam ? String(f.diam) : ""],
       ["quadrangle", f.quad], ["origin", f.origin], ["status", f.status], ["info", f.info], ["id", f.id]]);
+    showDesc(f);
     $("fOrigin").textContent = f.origin || "Not given in the gazetteer.";
     $("fInfo").textContent = f.info || "";
     var at = ATLAS[f.id] || {}, ar = [];
@@ -655,6 +663,22 @@
     renderNeighbors(f);
     refreshSun();
     requestDraw();
+  }
+
+  // Curated descriptions (VMA database, Legrand). Dev file, git-ignored until permission; absent on the public site.
+  var DESC = null;
+  function loadDesc() {
+    fetch("data/dev/descriptions.json").then(function (r) { if (!r.ok) throw 0; return r.json(); })
+      .then(function (j) { DESC = j.d || {}; if (sel) showDesc(sel); }).catch(function () {});
+  }
+  function showDesc(f) {
+    var d = DESC && DESC[f.lname], r = [];
+    if (d) {
+      [["general_1", "General"], ["general_2", "Age note"], ["slopes", "Slopes"], ["walls", "Walls"], ["floor", "Floor"], ["facts", "Facts"]].forEach(function (k) { if (d[k[0]]) r.push([k[1], d[k[0]]]); });
+      if (d.interest_n && d.interest_n !== "0") r.push(["Interest (1-5)", d.interest_n]);
+    }
+    $("fDescWrap").hidden = !r.length;
+    rows($("fDesc"), r);
   }
 
   var COMPASS = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
@@ -798,6 +822,7 @@
 
   /* ---- features: load, search, list -------------------------------------------------------------- */
   function loadAtlas() {
+    loadDesc();
     fetch("data/atlas/atlas-index.json").then(function (r) { return r.json(); }).then(function (j) { ATLAS = j.features || {}; if (sel) showFeature(); }).catch(function () {});
   }
   function loadFeatures() {
