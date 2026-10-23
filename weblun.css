@@ -1,0 +1,30 @@
+/* Web links page (WebLun). Builds on lunar100.css tokens and table styles. */
+.wl { padding: 1rem clamp(0.75rem, 2vw, 1.25rem); }
+.wl .tablewrap { max-height: calc(100vh - 11rem); }
+.wl td.url a { word-break: break-all; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 0.74rem; }
+.wl td.name { font-weight: 600; min-width: 12rem; }
+.wl td.date { white-space: nowrap; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 0.74rem; }
+.wl td.lang { white-space: nowrap; }
+.tools { display: inline-flex; gap: 0.3rem; }
+.tools .btn { min-width: 2.2rem; text-align: center; }
+.tools .btn:disabled { opacity: 0.4; cursor: default; }
+.wl tbody tr { cursor: pointer; }
+.wl tbody tr.sel { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.wl .mine { font-size: 0.65rem; color: var(--accent); border: 1px solid var(--accent); border-radius: 6px; padding: 0 0.3rem; margin-left: 0.4rem; font-weight: 400; white-space: nowrap; }
+dialog label { display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.76rem; color: var(--ink-faint); margin-top: 0.6rem; }
+dialog input, dialog textarea { font: inherit; font-size: 0.86rem; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 8px; padding: 0.35rem 0.5rem; width: min(34rem, 80vw); }
+dialog .actions .btn + .btn { margin-left: 0.4rem; }
+#sErr { color: var(--warn); }
+.bar select { max-width: 14rem; }
+.bar input[type="search"] { min-width: 12rem; }
+dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; padding: 1rem 1.2rem; max-width: min(40rem, 94vw); }
+dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+dialog h2 { margin-top: 0; }
+dialog .actions { margin-top: 1rem; text-align: right; }
+@media (max-width: 860px) { .wl .tablewrap { max-height: 70vh; } }
+@media print {
+  .bar, .site-head, .foot, .mine { display: none; } .wl { padding: 0; }
+  .wl .tablewrap { max-height: none; overflow: visible; border: 0; }
+  :root { color-scheme: light; --bg: #fff; --panel: #fff; --panel-2: #f2f2f2; --ink: #000; --ink-dim: #222; --ink-faint: #444; --line: #999; --line-soft: #ccc; --accent: #000; }
+  body { background: #fff; }
+}
