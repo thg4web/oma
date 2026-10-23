@@ -20,7 +20,7 @@ scratch/
 .claude/
 
 # Large source rasters (map tiles in data/tiles are tracked, cleared for publishing 2026-10-22)
-data/source/
+# data/source/
 
 # VMA-derived development data, not for publication until permission (see project/docs/data-sources.md)
-data/dev/
+# data/dev/
