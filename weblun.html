@@ -53,6 +53,16 @@
     <button id="bDel" type="button" class="btn" title="Delete the selected site" aria-label="Delete the selected site" disabled>&minus;</button>
     <button id="bEdit" type="button" class="btn" title="Edit the selected site" disabled>Edit</button>
   </span>
+  <span class="tools" role="group" aria-label="Export or import the list">
+    <select id="xFmt" aria-label="File format" title="File format">
+      <option value="json">JSON</option>
+      <option value="csv">CSV</option>
+      <option value="txt">Text (tab separated)</option>
+    </select>
+    <button id="bExport" type="button" class="btn" title="Download the sites shown as a file">Export</button>
+    <button id="bImport" type="button" class="btn" title="Add the sites in a JSON, CSV or text file to your list">Import</button>
+    <input id="xFile" type="file" accept=".json,.csv,.txt,.tsv,text/csv,text/plain,application/json" hidden>
+  </span>
   <span class="progress" id="count"></span>
 </section>
 
@@ -94,7 +104,7 @@
 <dialog id="dText"><h2 id="dTextT"></h2><div id="dTextB"></div><div class="actions"><form method="dialog"><button class="btn">Close</button></form></div></dialog>
 
 <footer class="foot">
-  <p>The list is the curated WebLun list from Virtual Moon Atlas, by Christian Legrand (used with permission pending). Sites are external and outside our control; an address may change or stop working. Click an address to open it in a new tab. Click a row to select it, then use + &minus; and Edit. Your additions, edits and deletions are kept in this browser only; the original list is never changed.</p>
+  <p>The list is the curated WebLun list from Virtual Moon Atlas, by Christian Legrand (used with permission pending). Sites are external and outside our control; an address may change or stop working. Click an address to open it in a new tab. Click a row to select it, then use + &minus; and Edit. Your additions, edits and deletions are kept in this browser only; the original list is never changed. Export saves the sites shown as JSON, CSV or tab-separated text, and Import adds sites from such a file.</p>
   <p>Part of <a href="index.html">Observer's Moon Atlas</a>. GPL-3.0-or-later.</p>
 </footer>
 

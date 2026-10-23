@@ -141,6 +141,88 @@
     sel = null; saveMy(); build(); fillThemes(); render();
   });
   $("mRestore").addEventListener("click", function () { MY.del = []; saveMy(); build(); fillThemes(); render(); });
+  /* ---- export and import: JSON, CSV or tab-separated text ---- */
+  var HEAD = { name: "Site name", language: "Language", theme: "Theme", subtheme: "Sub-theme", url: "Address", description: "Description", date: "Recorded" };
+  var ALIAS = { name: ["name", "site", "sitename", "site name", "title"], language: ["language", "lang"], theme: ["theme", "category"],
+    subtheme: ["subtheme", "sub-theme", "sub theme", "subcategory"], url: ["url", "address", "link", "href"], description: ["description", "desc", "notes"],
+    date: ["date", "recorded", "recording date", "recorded date"] };
+  function shown() { return DATA.filter(matches).sort(cmp); }
+  function plain(r) { var o = {}; COLS.forEach(function (k) { o[k] = r[k]; }); return o; }
+  function cell(v, d) { v = String(v).replace(/\r?\n/g, " "); return v.indexOf(d) >= 0 || v.indexOf('"') >= 0 ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function delimited(list, d) {
+    return [COLS.map(function (k) { return cell(HEAD[k], d); }).join(d)].concat(list.map(function (r) { return COLS.map(function (k) { return cell(r[k], d); }).join(d); })).join("\r\n") + "\r\n";
+  }
+  function download(name, mime, text) {
+    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([text], { type: mime })); a.download = name;
+    document.body.appendChild(a); a.click(); if (a.remove) a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  }
+  function doExport() {
+    var list = shown(), f = $("xFmt").value, stem = "oma-web-links-" + today();
+    if (f === "json") download(stem + ".json", "application/json", JSON.stringify({ source: "Observer's Moon Atlas, Web links", exported: today(), sites: list.map(plain) }, null, 2) + "\n");
+    else if (f === "csv") download(stem + ".csv", "text/csv;charset=utf-8", "\ufeff" + delimited(list, ","));
+    else download(stem + ".txt", "text/plain;charset=utf-8", delimited(list, "\t"));
+    $("msg").textContent = "Exported " + list.length + " site" + (list.length === 1 ? "" : "s") + " as " + f.toUpperCase() + ".";
+  }
+  // RFC 4180 style reader: quoted fields may hold the delimiter, quotes ("") and line breaks
+  function parseDelimited(t, d) {
+    var rows = [], row = [], f = "", q = false, i, c;
+    t = t.replace(/^\ufeff/, "");
+    for (i = 0; i < t.length; i++) {
+      c = t.charAt(i);
+      if (q) { if (c === '"') { if (t.charAt(i + 1) === '"') { f += '"'; i++; } else q = false; } else f += c; }
+      else if (c === '"' && f === "") q = true;
+      else if (c === d) { row.push(f); f = ""; }
+      else if (c === "\n" || c === "\r") { if (c === "\r" && t.charAt(i + 1) === "\n") i++; row.push(f); f = ""; rows.push(row); row = []; }
+      else f += c;
+    }
+    if (f !== "" || row.length) { row.push(f); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (x) { return x.trim() !== ""; }); });
+  }
+  function fromTable(rows) {
+    if (!rows.length) return [];
+    var map = {}, first = rows[0].map(function (x) { return x.trim().toLowerCase(); }), hasHead = false;
+    COLS.forEach(function (k) { var ix = first.findIndex(function (h) { return ALIAS[k].indexOf(h) >= 0; }); if (ix >= 0) { map[k] = ix; hasHead = true; } });
+    if (!hasHead) { COLS.forEach(function (k, i) { map[k] = i; }); } else rows = rows.slice(1);
+    return rows.map(function (r) { var o = {}; COLS.forEach(function (k) { o[k] = map[k] === undefined ? "" : (r[map[k]] || ""); }); return o; });
+  }
+  function fromJson(t) {
+    var j = JSON.parse(t), list = Array.isArray(j) ? j : (j && (j.sites || j.rows)) || [];
+    return list.map(function (r) {
+      var o = {};
+      if (Array.isArray(r)) COLS.forEach(function (k, i) { o[k] = r[i] === undefined || r[i] === null ? "" : String(r[i]); });
+      else COLS.forEach(function (k) {
+        var v = r && r[k]; if (v === undefined && r) { ALIAS[k].some(function (a) { return Object.keys(r).some(function (kk) { if (kk.toLowerCase() === a) { v = r[kk]; return true; } return false; }); }); }
+        o[k] = v === undefined || v === null ? "" : String(v);
+      });
+      return o;
+    });
+  }
+  function hostOf(u) { var m = /^https?:\/\/([^\/?#]+)/i.exec(u); return m ? m[1].replace(/^www\./i, "") : ""; }
+  function dupKey(name, url) { return url.toLowerCase() + "|" + (name || hostOf(url)).toLowerCase(); }
+  function doImport(file) {
+    var name = (file.name || "").toLowerCase();
+    return file.text().then(function (t) {
+      var recs, tt = t.replace(/^\ufeff/, "").trimStart();
+      if (name.slice(-5) === ".json" || tt.charAt(0) === "{" || tt.charAt(0) === "[") recs = fromJson(t);
+      else { var line = tt.split(/\r?\n/)[0] || ""; recs = fromTable(parseDelimited(t, name.slice(-4) === ".csv" || (line.indexOf("\t") < 0 && line.indexOf(",") >= 0) ? "," : "\t")); }
+      var have = {}; DATA.forEach(function (r) { have[dupKey(r.name, r.url)] = 1; });
+      var added = 0, dup = 0, bad = 0;
+      recs.slice(0, 5000).forEach(function (o) {
+        COLS.forEach(function (k) { o[k] = String(o[k] || "").trim().slice(0, k === "description" ? 500 : k === "url" ? 500 : 120); });
+        if (!o.theme || !/^https?:\/\/[^\s]+\.[^\s]+$/i.test(o.url)) { bad++; return; }
+        if (!o.name) o.name = hostOf(o.url);
+        var key = dupKey(o.name, o.url);
+        if (have[key]) { dup++; return; }
+        have[key] = 1; o.date = /^\d{4}-\d\d-\d\d$/.test(o.date) ? o.date : today(); o.id = "u" + Date.now() + "-" + added; MY.user.push(o); added++;
+      });
+      if (added) { saveMy(); build(); fillThemes(); render(); }
+      $("msg").textContent = "Imported " + added + " site" + (added === 1 ? "" : "s") + (dup ? ", " + dup + " already in the list" : "") + (bad ? ", " + bad + " skipped (a theme and an http or https address are needed)" : "") + ".";
+    }).catch(function () { $("msg").textContent = "That file could not be read as JSON, CSV or tab-separated text."; });
+  }
+  $("bExport").addEventListener("click", doExport);
+  $("bImport").addEventListener("click", function () { $("xFile").click(); });
+  $("xFile").addEventListener("change", function () { var f = $("xFile").files && $("xFile").files[0]; if (f) doImport(f).then(function () { try { $("xFile").value = ""; } catch (e) {} }); });
   $("go").addEventListener("click", render);
   $("q").addEventListener("keydown", function (e) { if (e.key === "Enter") render(); });
   $("q").addEventListener("input", render);
@@ -164,6 +246,7 @@
       "Type in the search box to look in every column or in one column chosen in Search in. The list updates as you type.",
       "Click a column title to sort, and again to reverse. Click an address to open the site in a new tab.",
       "Reset selection clears every filter.",
+      "Export downloads the sites shown, with the format chosen next to it: JSON, CSV for a spreadsheet, or tab-separated text. Reset the selection first to export everything. Import adds the sites in such a file to your list; sites already in the list are skipped, and every site needs a theme and an http or https address, and a missing name is taken from the address.",
       "Click a row to select it. + adds a site, Edit changes the selected site and the minus button deletes it. Deleted sites from the original list can be brought back with Restore deleted. Your changes stay in this browser only, and the original list is never changed."]);
   });
   $("mAbout").addEventListener("click", function () {
