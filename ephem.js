@@ -57,6 +57,12 @@
     return Math.asin(Math.sin(p) * Math.sin(p0) + Math.cos(p) * Math.cos(p0) * Math.cos(dl)) * R2D;
   }
 
+  // great-circle angle in degrees between two selenographic points
+  function angDist(lat1, lon1, lat2, lon2) {
+    var p1 = lat1 * D2R, p2 = lat2 * D2R, dl = (lon2 - lon1) * D2R;
+    return Math.acos(Math.max(-1, Math.min(1, Math.sin(p1) * Math.sin(p2) + Math.cos(p1) * Math.cos(p2) * Math.cos(dl)))) * R2D;
+  }
+
   // next sunrise and sunset at a feature (Moon-local Sun crossing 0 deg), scanning forward
   function sunEvents(date, lat, lon, days) {
     var step = 3 * 3600 * 1000, t0 = date.getTime(), out = { rise: null, set: null };
@@ -116,10 +122,15 @@
     return null;
   }
 
-  // observer-based values: altitude, azimuth, rise, set, transit
-  function observerInfo(date, latDeg, lonDeg) {
-    var obs = new A.Observer(latDeg, lonDeg, 0);
-    var eq = A.Equator(A.Body.Moon, date, obs, true, true);
+  // observer-based values: altitude, azimuth, rise, set, transit.
+  // heightM is the observer's height in metres. geocentric true gives the direction from the Earth's
+  // centre (no parallax), false (the default) is the topocentric view from the observer.
+  function observerInfo(date, latDeg, lonDeg, heightM, geocentric) {
+    var obs = new A.Observer(latDeg, lonDeg, heightM || 0), eq;
+    if (geocentric) {
+      var v = A.RotateVector(A.Rotation_EQJ_EQD(date), A.GeoVector(A.Body.Moon, date, true));
+      eq = A.EquatorFromVector(v);
+    } else eq = A.Equator(A.Body.Moon, date, obs, true, true);
     var hor = A.Horizon(date, obs, eq.ra, eq.dec, "normal");
     var rise = A.SearchRiseSet(A.Body.Moon, obs, +1, date, 2);
     var set = A.SearchRiseSet(A.Body.Moon, obs, -1, date, 2);
@@ -130,6 +141,6 @@
   root.OMA = root.OMA || {};
   root.OMA.ephem = { compute: compute, sunElevation: sunElevation, sunEvents: sunEvents,
                      nextQuarters: nextQuarters, prevQuarter: prevQuarter, nextLibrationExtreme: nextLibrationExtreme, lastNewMoon: lastNewMoon, observerInfo: observerInfo,
-                     norm180: norm180, norm360: norm360 };
+                     norm180: norm180, norm360: norm360, angDist: angDist };
   if (typeof module !== "undefined" && module.exports) module.exports = root.OMA.ephem;
 })(typeof window !== "undefined" ? window : globalThis);

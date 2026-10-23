@@ -4,7 +4,7 @@
    No DEM relighting yet: the Sun lights the sphere, crater walls cast no shadows. */
 (function () {
   "use strict";
-  var E = window.OMA && window.OMA.ephem;
+  var E = window.OMA && window.OMA.ephem, U = window.OMA && window.OMA.util;
   var D2R = Math.PI / 180, R2D = 180 / Math.PI;
   var MOON_D_KM = 3474.8, MOON_R_KM = 1737.4;
 
@@ -19,13 +19,17 @@
   function fmtLon(v) { return Math.abs(v).toFixed(2) + "°" + (v >= 0 ? "E" : "W"); }
   function lsGet(k, d) { try { var v = localStorage.getItem(k); return v === null ? d : v; } catch (e) { return d; } }
   function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  // Time zone for every time on the page: "local" (the browser's), "UTC" or an IANA name. Set from the observer panel.
+  var zone = "local";
   function fmtLocal(d) {
-    return d ? d.toLocaleString([], { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "none in range";
+    if (!d) return "none in range";
+    var o = { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" };
+    if (zone !== "local") o.timeZone = zone;
+    return d.toLocaleString([], o);
   }
   function fmtUTC(d) { return d.toISOString().slice(0, 16).replace("T", " ") + " UTC"; }
-  function toLocalInput(d) {
-    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
-  }
+  function toLocalInput(d) { return U.toInputValue(d, zone); }
+  function zoneLabel() { return zone === "local" ? "your local time" : zone === "UTC" ? "UTC" : zone.replace(/_/g, " "); }
   function fmtKm(k) { return k >= 100 ? Math.round(k) + " km" : k.toFixed(1) + " km"; }
   function rows(el, pairs) {
     el.textContent = "";
@@ -36,18 +40,22 @@
     });
   }
 
-  if (!E) { $("fName").textContent = "EPHEMERIS FAILED TO LOAD"; return; }
+  if (!E || !U) { $("fName").textContent = "EPHEMERIS FAILED TO LOAD"; return; }
 
   /* ---- state ---------------------------------------------------------------- */
   var view = { lon0: 0, lat0: 0, zoom: 1, sx: 1, sy: 1, term: true, grid: false, labels: true, density: 0.5,
                bright: 1.6, libr: true, free: false, manualSun: false, sunLon: 35, hidden: {},
-               scale: true, shortNames: false, marks: true, centerLabels: false, gridStep: 30 };
+               scale: true, shortNames: false, marks: true, centerLabels: false, gridStep: 30,
+               termLine: false, earth: false, markSize: 2.5, marksOnly: false, detail: 1200 };
+  var markHidden = false, exporting = false, exportPx = 0;
+  var L100 = { on: false, rows: null };
   var ov = { on: false, opacity: 0.5, data: null, w: 0, h: 0, loading: false };
   var S = { date: new Date(), live: false, st: null, sunVec: [0, 0, 1] };
   var FE = [], sel = null, matches = [], matchIdx = -1, ATLAS = {};
-  var measure = { on: false, pts: [] };
+  var measure = { on: false, pts: [], text: "" };
   // Default observer is Greenwich, a neutral place. Visitors set their own, saved in their browser only.
-  var obs = { lat: parseFloat(lsGet("oma-obs-lat", "51.48")), lon: parseFloat(lsGet("oma-obs-lon", "0")) };
+  var obs = { lat: parseFloat(lsGet("oma-obs-lat", "51.48")), lon: parseFloat(lsGet("oma-obs-lon", "0")),
+              alt: parseFloat(lsGet("oma-obs-alt", "0")) || 0, geo: lsGet("oma-obs-mode", "topo") === "geo" };
   var canvas = $("globe"), ctx = canvas.getContext("2d");
   var off = document.createElement("canvas"), octx = off.getContext("2d");
   var W = 0, H = 0, dpr = 1, stars = [], pending = false, interacting = false, ixTimer = null;
@@ -64,6 +72,8 @@
   var tctx = tcanvas.getContext("2d", { willReadFrequently: true });
 
   function setLevel(t) { $("sLevel").textContent = t; }
+  var ready = { feat: false, tiles: false };
+  function markReady(k) { ready[k] = true; if (ready.feat && ready.tiles && window.OMA.splashReady) window.OMA.splashReady(); }
 
   function loadLevel(lay, z, done) {
     var cols = Math.pow(2, z + 1), nrows = Math.pow(2, z), w = cols * TILE_PX, h = nrows * TILE_PX;
@@ -93,11 +103,12 @@
     loadLevel(lay, 3, function (g) {
       if (tok !== loadToken) return;
       if (!g) {
+        markReady("tiles");
         setLevel("layer not available");
         if (prev !== lay) { layer = prev; $("layerBase").value = prev.id; }
         return;
       }
-      G = g; setLevel(lay.short + " z3"); requestDraw();
+      G = g; setLevel(lay.short + " z3"); markReady("tiles"); requestDraw();
       loadLevel(lay, 4, function (g2) {
         if (tok !== loadToken || !g2) return;
         G = g2; setLevel(lay.short + " z4"); requestDraw();
@@ -207,7 +218,8 @@
 
   /* ---- drawing ------------------------------------------------------------------ */
   function renderSphere() {
-    var cap = interacting ? 640 : 1200, scale = Math.min(1, cap / Math.max(W, H));
+    // an export draws at its own pixel size (exportPx) with the page layout size kept as the unit, so labels scale with it
+    var cap = interacting ? 640 : view.detail, scale = exporting ? exportPx / Math.max(W, H) : Math.min(1, cap / Math.max(W, H));
     var ow = Math.max(1, Math.round(W * scale)), oh = Math.max(1, Math.round(H * scale));
     if (off.width !== ow || off.height !== oh) { off.width = ow; off.height = oh; }
     var img = octx.createImageData(ow, oh), data = img.data;
@@ -257,6 +269,44 @@
     ctx.restore();
   }
 
+  // draws a run of selenographic points, breaking the line wherever the point is on the far side
+  function strokePoints(pts) {
+    var first = true;
+    ctx.beginPath();
+    pts.forEach(function (p) {
+      var q = toScreen(p.lat, p.lon);
+      if (q.z <= 0) { first = true; return; }
+      if (first) { ctx.moveTo(q.x, q.y); first = false; } else ctx.lineTo(q.x, q.y);
+    });
+    ctx.stroke();
+  }
+  function drawTerminatorLine() {
+    ctx.save(); ctx.strokeStyle = "rgba(255,176,64,0.95)"; ctx.lineWidth = 1.5; ctx.setLineDash([8, 5]);
+    strokePoints(U.terminatorPoints(S.sunVec, 240));
+    ctx.restore();
+  }
+  // the sub-Earth point is where the Earth stands overhead; it moves around the disc as the Moon librates
+  function drawEarthMark() {
+    if (!S.st) return;
+    var q = toScreen(S.st.libLat, S.st.libLon);
+    if (q.z <= 0) return;
+    ctx.save(); ctx.strokeStyle = "#7cf0c0"; ctx.fillStyle = "#7cf0c0"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, Math.PI * 2); ctx.moveTo(q.x - 14, q.y); ctx.lineTo(q.x + 14, q.y); ctx.moveTo(q.x, q.y - 14); ctx.lineTo(q.x, q.y + 14); ctx.stroke();
+    ctx.font = '600 11px "IBM Plex Mono", monospace'; ctx.textBaseline = "top"; ctx.fillText("Earth overhead", q.x + 12, q.y + 10);
+    ctx.restore();
+  }
+  function drawL100() {
+    if (!L100.on || !L100.rows) return;
+    ctx.save(); ctx.strokeStyle = "#4dd2ff"; ctx.fillStyle = "#4dd2ff"; ctx.lineWidth = 1.5; ctx.font = '600 10px "IBM Plex Mono", monospace'; ctx.textBaseline = "bottom";
+    L100.rows.forEach(function (r) {
+      var q = toScreen(r[3], r[4]);
+      if (q.z < 0.08 || q.x < -20 || q.x > W + 20 || q.y < -20 || q.y > H + 20) return;
+      ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillText("L" + r[0], q.x + 6, q.y - 8);
+    });
+    ctx.restore();
+  }
+
   var SHORT_RE = /^(Mare|Mons|Montes|Rima|Rimae|Vallis|Dorsum|Dorsa|Catena|Palus|Sinus|Lacus|Oceanus|Promontorium|Rupes|Lacuna|Planitia|Fossa)\s+/;
   function shortName(n) { var m = n.replace(SHORT_RE, ""); return m.length >= 3 ? m : n; }
 
@@ -267,7 +317,9 @@
     var len = km * pxPerKm, x0 = 14, y0 = H - 16;
     ctx.save(); ctx.strokeStyle = "#cfe4fa"; ctx.fillStyle = "#cfe4fa"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(x0, y0 - 5); ctx.lineTo(x0, y0); ctx.lineTo(x0 + len, y0); ctx.lineTo(x0 + len, y0 - 5); ctx.stroke();
-    ctx.font = '600 11px "IBM Plex Mono", monospace'; ctx.textBaseline = "bottom"; ctx.fillText(km + " km", x0, y0 - 7);
+    // angle as seen from Earth: the Moon's apparent size over its width in kilometres
+    var arc = S.st ? km / MOON_D_KM * S.st.diamDeg * 3600 : 0, arcTxt = !arc ? "" : arc < 120 ? ", " + arc.toFixed(0) + "\"" : ", " + (arc / 60).toFixed(arc < 600 ? 1 : 0) + "'";
+    ctx.font = '600 11px "IBM Plex Mono", monospace'; ctx.textBaseline = "bottom"; ctx.fillText(km + " km" + arcTxt, x0, y0 - 7);
     ctx.restore();
   }
 
@@ -287,7 +339,7 @@
     function label(f, isSel) {
       var p = toScreen(f.lat, f.lon);
       if (p.z < 0.08 || p.x < -40 || p.x > W + 40 || p.y < -20 || p.y > H + 20) return;
-      var sizePx = f.diam * pxPerKm;
+      var sizePx = f.diam * pxPerKm, minimal = view.marksOnly && !isSel;
       if (isSel) {
         ctx.strokeStyle = "#ffd24d"; ctx.lineWidth = 1.5; ctx.beginPath();
         ctx.arc(p.x, p.y, Math.max(8, Math.min(sizePx / 2, 400)), 0, Math.PI * 2); ctx.stroke();
@@ -295,10 +347,11 @@
       if (view.density <= 0) return;                 // slider fully left: no label text at all, selection ring stays
       if (!view.labels && !isSel) return;
       var nm = view.shortNames ? shortName(f.name) : f.name;
-      var w = ctx.measureText(nm).width, tx = view.centerLabels ? p.x - w / 2 : p.x + 8, r = [tx, p.y - 7, w, 14];
+      var w = minimal ? 0 : ctx.measureText(nm).width, tx = view.centerLabels ? p.x - w / 2 : p.x + 8, r = [minimal ? p.x - 4 : tx, p.y - 7, minimal ? 8 : w, 14];
       if (!isSel && overlaps(r)) return;
       placed.push(r);
-      if (view.marks && !view.centerLabels) { ctx.fillStyle = "#ff5a4d"; ctx.beginPath(); ctx.arc(p.x, p.y, 2.5, 0, Math.PI * 2); ctx.fill(); }
+      if ((view.marks && !view.centerLabels) || minimal) { ctx.fillStyle = "#ff5a4d"; ctx.beginPath(); ctx.arc(p.x, p.y, view.markSize, 0, Math.PI * 2); ctx.fill(); }
+      if (minimal) return;                           // marks only: names appear for the selected feature alone
       ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.75)"; ctx.strokeText(nm, tx, p.y);
       ctx.fillStyle = isSel ? "#ffd24d" : "#f3e9a0"; ctx.fillText(nm, tx, p.y);
     }
@@ -306,11 +359,11 @@
       for (var i = 0; i < FE.length && count < 220; i++) {
         var f = FE[i];
         if (f.diam * pxPerKm < minPx) break;
-        if (view.hidden[f.type] || f === sel) continue;
+        if (view.hidden[f.type] || (f === sel && !markHidden)) continue;
         var before = placed.length; label(f, false); if (placed.length > before) count++;
       }
     }
-    if (sel) label(sel, true);
+    if (sel && !markHidden) label(sel, true);
     ctx.restore();
   }
 
@@ -354,9 +407,12 @@
     { id: "cam", name: "Custom camera", mode: "camera", fl: 1000, pw: 4000, ph: 3000, ps: 3.76 },
     { id: "eye", name: "Custom eyepiece (true field circle)", mode: "eye", scope: 1000, eyeFl: 25, afov: 52 }
   ];
-  var fov = { on: false, preset: lsGet("oma-fov-preset", "s50"), vals: {}, rot: 0 };
+  var fov = { on: false, preset: lsGet("oma-fov-preset", "s50"), vals: {}, rot: 0, user: [] };
   try { fov.vals = JSON.parse(lsGet("oma-fov-vals", "{}")) || {}; } catch (e) { fov.vals = {}; }
-  function fovPreset() { return PRESETS.filter(function (p) { return p.id === fov.preset; })[0] || PRESETS[0]; }
+  // the visitor's own cameras and eyepieces, kept in this browser (same fields as the built-in presets, ids start with u)
+  try { fov.user = JSON.parse(lsGet("oma-fov-user", "[]")) || []; } catch (e) { fov.user = []; }
+  function fovAll() { return PRESETS.concat(fov.user); }
+  function fovPreset() { return fovAll().filter(function (p) { return p.id === fov.preset; })[0] || PRESETS[0]; }
   function fovGet() {
     var p = fovPreset(), o = {}, k;
     for (k in p) o[k] = p[k];
@@ -398,7 +454,10 @@
     ctx.imageSmoothingEnabled = true; ctx.drawImage(off, 0, 0, W, H);
     var g = geom();
     if (view.grid) drawGrid();
-    drawLabels(g); drawMeasure(); drawFov(g); drawScale(g);
+    if (view.termLine) drawTerminatorLine();
+    drawL100();
+    drawLabels(g); drawMeasure(); if (view.earth) drawEarthMark(); drawFov(g); drawScale(g);
+    if (exporting) return;
     updateField(g);
     if (!interacting) wantTiles();
   }
@@ -421,6 +480,12 @@
   function updateField(g) {
     var diam = S.st ? S.st.diamDeg : 0.52, arc = W / (2 * g.R) * diam * 60, kmpx = MOON_D_KM / (2 * g.R);
     $("sField").textContent = arc.toFixed(arc < 10 ? 1 : 0) + "', " + kmpx.toFixed(2) + "km/px";
+    $("sCentre").textContent = fmtLon(view.lon0) + " " + fmtLat(view.lat0);
+    var km2 = U.visibleAreaKm2(W, H, kmpx, function (px, py) {
+      var vx = view.sx * (px - g.cx) / g.R, vy = view.sy * (g.cy - py) / g.R, r2 = vx * vx + vy * vy;
+      return r2 >= 1 ? 0 : Math.sqrt(1 - r2);
+    }, 48, 32);
+    $("sArea").textContent = km2 >= 1e6 ? (km2 / 1e6).toFixed(2) + " million km²" : Math.round(km2).toLocaleString() + " km²";
     $("zoomOut").textContent = view.zoom.toFixed(1) + ":1";
   }
 
@@ -432,8 +497,9 @@
     S.sunVec = vec(sl.lat, sl.lon);
     applyCentering();
     $("sunOut").textContent = view.manualSun ? Math.abs(view.sunLon) + "°" + (view.sunLon >= 0 ? "E" : "W") : "auto " + S.st.sunLon.toFixed(1) + "°";
-    $("sDate").textContent = S.date.getFullYear() + "-" + pad(S.date.getMonth() + 1) + "-" + pad(S.date.getDate());
-    $("sTime").textContent = pad(S.date.getHours()) + ":" + pad(S.date.getMinutes()) + ":" + pad(S.date.getSeconds());
+    var zp = U.zoneParts(S.date, zone);
+    $("sDate").textContent = zp.y + "-" + pad(zp.mo) + "-" + pad(zp.d);
+    $("sTime").textContent = pad(zp.h) + ":" + pad(zp.mi) + ":" + pad(zp.s);
     drawPhaseIcon();
     clearTimeout(infoTimer); infoTimer = setTimeout(function () { refreshSun(); refreshEphem(); }, 120);
     requestDraw();
@@ -472,7 +538,7 @@
     $("fOrigin").textContent = f.origin || "Not given in the gazetteer.";
     $("fInfo").textContent = f.info || "";
     var at = ATLAS[f.id] || {}, ar = [];
-    function ref(label, e, pre) { if (e) ar.push([label, (pre || "") + e.v.join(", ") + (e.q === "f" ? " (check)" : "")]); }
+    function ref(label, e, pre) { if (e) ar.push([label, (pre || "") + e.v.join(", ") + (e.q === "f" || e.c ? " (check)" : "")]); }
     ref("Rükl chart", at.r); ref("21st Century Atlas", at.a); ref("North, Observing the Moon", at.n, "pp. ");
     if (!ar.length) ar.push(["References", "none found yet"]);
     rows($("fAtlas"), ar);
@@ -553,21 +619,23 @@
 
   function refreshEphem() {
     if ($("paneEphem").hidden || !S.st) return;
-    var st = S.st, oi = E.observerInfo(S.date, obs.lat, obs.lon);
+    var st = S.st, oi = E.observerInfo(S.date, obs.lat, obs.lon, obs.alt, obs.geo);
     var age = (S.date - E.lastNewMoon(S.date)) / 86400000;
     function hms(h) { var hh = Math.floor(h), mm = Math.floor((h - hh) * 60); return hh + "h " + pad(mm) + "m"; }
     rows($("ephTable"), [
-      ["Local time", fmtLocal(S.date)], ["UTC", fmtUTC(S.date)],
+      [zone === "local" ? "Local time" : "Time (" + zoneLabel() + ")", fmtLocal(S.date)], ["UTC", fmtUTC(S.date)],
       ["Illuminated", (st.illum * 100).toFixed(1) + "%"], ["Age", age.toFixed(1) + " days"],
       ["Phase angle", st.phaseAngle.toFixed(1) + "°"], ["Elongation", st.elongation.toFixed(1) + "°"],
       ["Distance", Math.round(st.distKm).toLocaleString() + " km"], ["Apparent diameter", (st.diamDeg * 60).toFixed(2) + "'"],
       ["Libration longitude", fmtLon(st.libLon)], ["Libration latitude", fmtLat(st.libLat)],
       ["Sub-solar longitude", fmtLon(st.sunLon)], ["Sub-solar latitude", fmtLat(st.sunLat)],
       ["Colongitude", st.colong.toFixed(2) + "°"],
-      ["Moon altitude here", oi.alt.toFixed(1) + "°"], ["Moon azimuth here", oi.az.toFixed(1) + "°"],
+      ["Moon altitude here", oi.alt.toFixed(1) + "°" + (obs.geo ? " (geocentric)" : "")], ["Moon azimuth here", oi.az.toFixed(1) + "°"],
       ["Right ascension", hms(oi.ra)], ["Declination", oi.dec.toFixed(2) + "°"],
       ["Moonrise", fmtLocal(oi.rise)], ["Moonset", fmtLocal(oi.set)]
     ]);
+    refreshTerminator();
+    $("ephTzHint").textContent = "Times are in " + zoneLabel() + ". Positions from astronomy-engine, libration and Sun from Meeus ch. 53 (optical libration only)." + (obs.geo ? " Moonrise and moonset are always topocentric." : "");
     var names = { 0: "New Moon", 1: "First quarter", 2: "Full Moon", 3: "Last quarter" };
     var ul = $("phaseList"); ul.textContent = "";
     E.nextQuarters(S.date).forEach(function (q) {
@@ -583,6 +651,30 @@
     });
   }
 
+  /* ---- features on the terminator now (morning side: Sun just rising, evening side: Sun about to set) ---------- */
+  function refreshTerminator() {
+    var ul = $("termList"); ul.textContent = "";
+    if (!FE.length || !S.st) { $("termHint").textContent = ""; return; }
+    var st = S.st, out = [], band = 4;                       // degrees of Sun elevation either side of the terminator
+    for (var i = 0; i < FE.length; i++) {
+      var f = FE[i];
+      if (f.diam < 15) break;                                // list is sorted by size, large first
+      var e = E.sunElevation(st, f.lat, f.lon);
+      if (Math.abs(e) > band) continue;
+      if (E.angDist(st.libLat, st.libLon, f.lat, f.lon) > 88) continue;   // on the far side from Earth
+      out.push({ f: f, e: e, morning: E.norm180(f.lon - st.sunLon) < 0 });
+    }
+    $("termHint").textContent = out.length ? "Larger features within " + band + "° of Sun elevation of the terminator, facing Earth. Sunrise side is the morning terminator." : "No features of 15 km or more are on the terminator facing Earth right now.";
+    out.sort(function (a, b) { return b.f.diam - a.f.diam; });
+    out.slice(0, 40).forEach(function (o) {
+      var li = document.createElement("li"), b = document.createElement("button");
+      b.type = "button"; b.textContent = o.f.name;
+      var sp = document.createElement("span"); sp.textContent = (o.morning ? "sunrise" : "sunset") + " " + o.e.toFixed(1) + "°";
+      b.appendChild(sp); b.addEventListener("click", function () { select(o.f, true); });
+      li.appendChild(b); ul.appendChild(li);
+    });
+  }
+
   /* ---- features: load, search, list -------------------------------------------------------------- */
   function loadAtlas() {
     fetch("data/atlas/atlas-index.json").then(function (r) { return r.json(); }).then(function (j) { ATLAS = j.features || {}; if (sel) showFeature(); }).catch(function () {});
@@ -592,12 +684,13 @@
       FE = j.rows.map(function (r) {
         return { name: r[0], code: r[1], type: r[2], lat: r[3], lon: r[4], diam: r[5], quad: r[6], origin: r[7], status: r[8], info: r[9], id: r[10], lname: r[0].toLowerCase() };
       });
-      buildFilter();
+      buildFilter(); $("dbCount").textContent = FE.length.toLocaleString();
       var c = FE.filter(function (f) { return f.name === "Copernicus"; })[0] || FE[0];
       sel = c;
       applyUrlParams();
-      showFeature(); requestDraw();
+      showFeature(); requestDraw(); markReady("feat");
     }).catch(function () {
+      markReady("feat");
       $("fName").textContent = "FEATURES NOT LOADED";
       $("fSub").textContent = "Open this page through a web server so data/features/features.json can load.";
     });
@@ -626,7 +719,7 @@
     return a.concat(b);
   }
   function select(f, center) {
-    sel = f;
+    sel = f; markHidden = false;
     if (center) { view.lon0 = f.lon; view.lat0 = f.lat; view.free = true; }
     showFeature(); scheduleList();
   }
@@ -689,7 +782,7 @@
   $("filtAll").addEventListener("click", function () { setAllTypes(true); });
   $("filtNone").addEventListener("click", function () { setAllTypes(false); });
 
-  var POPS = [["popLayers", "tLayers"], ["popFilter", "tFilter"], ["popFov", "tFov"]];
+  var POPS = [["popLayers", "tLayers"], ["popFilter", "tFilter"], ["popFov", "tFov"], ["popScope", "tScope"]];
   function togglePop(id) {
     POPS.forEach(function (p) {
       var el = $(p[0]), on = p[0] === id && el.hidden;
@@ -704,9 +797,19 @@
     loadLayer(LAYERS.filter(function (l) { return l.id === $("layerBase").value; })[0]);
   });
 
-  PRESETS.forEach(function (p) { var o = document.createElement("option"); o.value = p.id; o.textContent = p.name; $("fovPreset").appendChild(o); });
+  function fovBuildSelect() {
+    var sl = $("fovPreset"); sl.textContent = "";
+    function add(parent, p) { var o = document.createElement("option"); o.value = p.id; o.textContent = p.name; parent.appendChild(o); }
+    PRESETS.forEach(function (p) { add(sl, p); });
+    if (fov.user.length) {
+      var g = document.createElement("optgroup"); g.label = "Your own";
+      fov.user.forEach(function (p) { add(g, p); });
+      sl.appendChild(g);
+    }
+  }
   function fovFill() {
-    var p = fovGet(); $("fovPreset").value = fov.preset;
+    var p = fovGet(); fov.preset = p.id; fovBuildSelect(); $("fovPreset").value = fov.preset;
+    $("fovDel").disabled = fov.preset.charAt(0) !== "u";
     var eye = p.mode === "eye";
     $("fovCustom").hidden = eye; $("fovEye").hidden = !eye;
     if (eye) { $("eyeScope").value = p.scope; $("eyeFl").value = p.eyeFl; $("eyeAfov").value = p.afov; }
@@ -724,6 +827,21 @@
   }
   $("fovPreset").addEventListener("change", function () { fov.preset = $("fovPreset").value; fov.on = true; fovFill(); lsSet("oma-fov-preset", fov.preset); requestDraw(); });
   ["fovFl", "fovPw", "fovPh", "fovPs", "eyeScope", "eyeFl", "eyeAfov", "fovRot"].forEach(function (id) { $(id).addEventListener("input", fovRead); });
+  $("fovSave").addEventListener("click", function () {
+    var base = fovGet(), nm = $("fovName").value.trim() || (base.mode === "eye" ? "My eyepiece " : "My camera ") + (fov.user.length + 1);
+    var np = { id: "u" + Date.now().toString(36), name: nm, mode: base.mode };
+    ["fl", "pw", "ph", "ps", "scope", "eyeFl", "afov"].forEach(function (k) { if (base[k] !== undefined) np[k] = base[k]; });
+    fov.user.push(np); fov.preset = np.id; fov.on = true;
+    lsSet("oma-fov-user", JSON.stringify(fov.user)); lsSet("oma-fov-preset", fov.preset);
+    $("fovName").value = ""; fovFill(); requestDraw();
+  });
+  $("fovDel").addEventListener("click", function () {
+    if (fov.preset.charAt(0) !== "u") return;
+    fov.user = fov.user.filter(function (p) { return p.id !== fov.preset; });
+    delete fov.vals[fov.preset]; fov.preset = PRESETS[0].id;
+    lsSet("oma-fov-user", JSON.stringify(fov.user)); lsSet("oma-fov-vals", JSON.stringify(fov.vals)); lsSet("oma-fov-preset", fov.preset);
+    fovFill(); requestDraw();
+  });
   $("fovOff").addEventListener("click", function () { fov.on = false; $("popFov").hidden = true; $("tFov").setAttribute("aria-pressed", "false"); requestDraw(); });
   $("tFov").addEventListener("click", function () { if (!$("popFov").hidden) fov.on = true; fovFill(); requestDraw(); });
 
@@ -751,13 +869,17 @@
   toggle("tLib", function (on) { view.libr = on; view.free = false; applyCentering(); });
   $("zoomPre").addEventListener("change", function () { var v = parseFloat($("zoomPre").value); if (v) setZoom(v); $("zoomPre").value = ""; });
   $("tFull").addEventListener("click", function () { view.free = false; view.zoom = 1; $("zoom").value = 1; applyCentering(); bumpInteract(); requestDraw(); });
-  $("dt0h").addEventListener("click", function () { var d = new Date(S.date); d.setHours(0, 0, 0, 0); setLive(false); setDate(d); });
+  $("dt0h").addEventListener("click", function () {
+    var p = U.zoneParts(S.date, zone); setLive(false); setDate(U.fromZoneParts(p.y, p.mo, p.d, 0, 0, zone));
+  });
   $("tPanel").addEventListener("click", function () {
     var on = !document.body.classList.contains("panel-off");
     document.body.classList.toggle("panel-off", on); $("tPanel").setAttribute("aria-pressed", on ? "true" : "false"); setTimeout(resize, 0);
   });
   function opt(id, key) { $(id).addEventListener("change", function () { view[key] = $(id).checked; requestDraw(); }); }
-  opt("oScale", "scale"); opt("oShort", "shortNames"); opt("oMarks", "marks"); opt("oCenter", "centerLabels");
+  opt("oScale", "scale"); opt("oShort", "shortNames"); opt("oMarksOnly", "marksOnly"); opt("oMarks", "marks"); opt("oCenter", "centerLabels"); opt("oTermLine", "termLine"); opt("oEarth", "earth");
+  $("markSize").addEventListener("input", function () { view.markSize = parseFloat($("markSize").value); requestDraw(); });
+  $("renderDetail").addEventListener("change", function () { view.detail = parseInt($("renderDetail").value, 10); requestDraw(); });
   $("gridStep").addEventListener("change", function () { view.gridStep = parseInt($("gridStep").value, 10); requestDraw(); });
   $("ovOn").addEventListener("change", function () {
     ov.on = $("ovOn").checked; if (ov.on) loadOverlay(); requestDraw();
@@ -768,9 +890,12 @@
   function libJump(sign) { var t = E.nextLibrationExtreme(S.date, sign); if (t) { setLive(false); view.libr = true; $("tLib").setAttribute("aria-pressed", "true"); view.free = false; setDate(t); } }
   $("libEast").addEventListener("click", function () { libJump(1); });
   $("libWest").addEventListener("click", function () { libJump(-1); });
+  // as in Virtual Moon Atlas: at 1:1 the button restores the Earth view, zoomed in it centers the selected feature
   $("tCenter").addEventListener("click", function () {
-    if (sel) { view.lon0 = sel.lon; view.lat0 = sel.lat; view.free = true; requestDraw(); }
+    if (view.zoom <= 1.001) { view.free = false; applyCentering(); requestDraw(); }
+    else if (sel) { view.lon0 = sel.lon; view.lat0 = sel.lat; view.free = true; requestDraw(); }
   });
+  $("tClearMark").addEventListener("click", function () { markHidden = true; requestDraw(); });
 
   function disclosure(btnId, cls) {
     var b = $(btnId), bar = $("toolbar");
@@ -782,7 +907,7 @@
   disclosure("toolsToggle", "open"); disclosure("menuToggle", "menu-open");
 
   $("dt").addEventListener("change", function () {
-    var d = new Date($("dt").value);
+    var d = U.fromInputValue($("dt").value, zone);
     if (!isNaN(d)) { setLive(false); setDate(d); }
   });
   function step(dir) { setLive(false); setDate(new Date(S.date.getTime() + dir * parseFloat($("dtStep").value))); }
@@ -797,45 +922,409 @@
   }
   $("dtLive").addEventListener("click", function () { setLive(!S.live); });
 
+  /* ---- pictures of the view: PNG, JPG or BMP, at the view size or 1500 or 3000 px square ---------------------- */
+  function makeStars(w, h) {
+    var a = [], n = Math.max(90, Math.min(260, Math.round(w * h / 5200)));
+    for (var i = 0; i < n; i++) a.push({ x: Math.random() * w, y: Math.random() * h, r: Math.random() * 1.1 + 0.25, a: (Math.random() * 0.5 + 0.25).toFixed(2) });
+    return a;
+  }
+  // draws the view into a new canvas n px square and returns it (n = 0 means the canvas on the page as it is)
+  function renderPicture(n) {
+    if (!n) return canvas;
+    var keep = { canvas: canvas, ctx: ctx, W: W, H: H, dpr: dpr, off: off, octx: octx, stars: stars, interacting: interacting }, cv = document.createElement("canvas");
+    var unit = Math.max(400, Math.min(1000, Math.min(W, H)));       // layout size the picture is composed at, then scaled up
+    cv.width = cv.height = n;
+    canvas = cv; ctx = cv.getContext("2d"); W = H = unit; dpr = n / unit;
+    off = document.createElement("canvas"); octx = off.getContext("2d"); stars = makeStars(unit, unit);
+    interacting = false; exporting = true; exportPx = n;
+    try { draw(); }
+    finally {
+      exporting = false; canvas = keep.canvas; ctx = keep.ctx; W = keep.W; H = keep.H; dpr = keep.dpr;
+      off = keep.off; octx = keep.octx; stars = keep.stars; interacting = keep.interacting;
+    }
+    return cv;
+  }
+  function pictureBlob(fmt, size, done) {
+    var n = size === "view" ? 0 : parseInt(size, 10), cv = renderPicture(n);
+    if (fmt === "bmp") {
+      var px = cv.getContext("2d").getImageData(0, 0, cv.width, cv.height);
+      done(new Blob([U.encodeBMP(px.data, cv.width, cv.height)], { type: "image/bmp" }));
+    } else cv.toBlob(done, fmt === "jpg" ? "image/jpeg" : "image/png", 0.92);
+  }
+  function pictureName(fmt, size) {
+    var z = U.zoneParts(S.date, zone);
+    return "oma-moon-" + z.y + pad(z.mo) + pad(z.d) + "-" + pad(z.h) + pad(z.mi) + (size === "view" ? "" : "-" + size) + "." + fmt;
+  }
+  function note(t) { $("readoutText").textContent = t; $("readoutActions").hidden = true; $("readout").hidden = false; }
   $("tSnap").addEventListener("click", function () {
-    canvas.toBlob(function (b) {
-      if (!b) return;
-      var a = document.createElement("a"), d = S.date;
-      a.href = URL.createObjectURL(b);
-      a.download = "oma-moon-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "-" + pad(d.getHours()) + pad(d.getMinutes()) + ".png";
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
-    }, "image/png");
+    var fmt = $("snapFmt").value, size = $("snapSize").value, big = size !== "view";
+    if (big) note("Rendering a " + size + " px picture, one moment.");
+    setTimeout(function () {
+      pictureBlob(fmt, size, function (b) {
+        if (!b) { note("The browser could not make that picture. Try a smaller size."); return; }
+        var a = document.createElement("a");
+        a.href = URL.createObjectURL(b); a.download = pictureName(fmt, size);
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+        if (big) { if (measure.on) $("readoutText").textContent = "Click two points to measure. Esc to stop."; else $("readout").hidden = true; }
+      });
+    }, big ? 30 : 0);
   });
+
+  /* ---- picture preview (lightbox) with zoom ---------------------------------------------------------------------- */
+  var light = { zoom: 1, url: null };
+  function lightApply() {
+    var box = document.querySelector(".light-scroll");
+    $("lightImg").style.width = Math.round(box.clientWidth * light.zoom) + "px";
+  }
+  function lightOpen(url, cap) {
+    if (light.url) URL.revokeObjectURL(light.url);
+    light.url = url; light.zoom = 1; $("lightImg").src = url; $("lightCap").textContent = cap;
+    if (!$("lightDlg").open) $("lightDlg").showModal();
+    lightApply();
+  }
+  $("tPreview").addEventListener("click", function () {
+    pictureBlob("png", $("snapSize").value === "view" ? "view" : "1500", function (b) {
+      if (b) lightOpen(URL.createObjectURL(b), "Moon at " + fmtLocal(S.date) + " (" + zoneLabel() + ")");
+    });
+  });
+  $("lightPlus").addEventListener("click", function () { light.zoom = Math.min(8, light.zoom * 1.5); lightApply(); });
+  $("lightMinus").addEventListener("click", function () { light.zoom = Math.max(0.25, light.zoom / 1.5); lightApply(); });
+  $("lightClose").addEventListener("click", function () { $("lightDlg").close(); });
+  $("lightDlg").addEventListener("close", function () { if (light.url) { URL.revokeObjectURL(light.url); light.url = null; $("lightImg").removeAttribute("src"); } });
+  window.addEventListener("resize", function () { if ($("lightDlg").open) lightApply(); });
 
   $("tMeasure").addEventListener("click", function () {
     measure.on = !measure.on; measure.pts = [];
     $("tMeasure").setAttribute("aria-pressed", measure.on ? "true" : "false");
-    $("readout").hidden = !measure.on;
-    $("readout").textContent = "Click two points to measure. Esc to stop.";
+    $("readout").hidden = !measure.on; $("readoutActions").hidden = true;
+    $("readoutText").textContent = "Click two points to measure. Esc to stop.";
     canvas.style.cursor = measure.on ? "copy" : "crosshair"; requestDraw();
   });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && measure.on) { $("tMeasure").click(); }
   });
+  function copyText(t) {
+    function fallback() {
+      var ta = document.createElement("textarea"); ta.value = t; ta.style.cssText = "position:fixed;left:-999px";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch (e) {}
+      ta.remove();
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).catch(fallback); else fallback();
+  }
+  $("copyDist").addEventListener("click", function () { if (measure.text) copyText(measure.text); });
+  $("copyCoord").addEventListener("click", function () {
+    copyText(measure.pts.map(function (p, i) { return "P" + (i + 1) + " " + fmtLat(p.lat) + " " + fmtLon(p.lon); }).join("; "));
+  });
 
   $("mAbout").addEventListener("click", function () { $("aboutDlg").showModal(); });
 
-  /* ---- observer location ------------------------------------------------------------------------------ */
-  $("obsLat").value = obs.lat; $("obsLon").value = obs.lon;
+  /* ---- observer location, altitude, time zone ------------------------------------------------------------------ */
+  var PLACES = [];
+  function fillObsBoxes() {
+    $("obsLat").value = Math.abs(obs.lat); $("obsNS").value = obs.lat < 0 ? "-1" : "1";
+    $("obsLon").value = Math.abs(obs.lon); $("obsEW").value = obs.lon < 0 ? "-1" : "1";
+    $("obsAlt").value = obs.alt; $("obsMode").value = obs.geo ? "geo" : "topo";
+  }
   function obsChanged() {
-    var la = parseFloat($("obsLat").value), lo = parseFloat($("obsLon").value);
+    var la = parseFloat($("obsLat").value) * parseInt($("obsNS").value, 10), lo = parseFloat($("obsLon").value) * parseInt($("obsEW").value, 10);
+    var al = parseFloat($("obsAlt").value);
     if (isFinite(la) && isFinite(lo) && Math.abs(la) <= 90 && Math.abs(lo) <= 180) {
-      obs.lat = la; obs.lon = lo; lsSet("oma-obs-lat", la); lsSet("oma-obs-lon", lo); refreshEphem();
+      obs.lat = la; obs.lon = lo; obs.alt = isFinite(al) ? al : 0; obs.geo = $("obsMode").value === "geo";
+      lsSet("oma-obs-lat", la); lsSet("oma-obs-lon", lo); lsSet("oma-obs-alt", obs.alt); lsSet("oma-obs-mode", obs.geo ? "geo" : "topo");
+      refreshEphem();
     }
   }
-  $("obsLat").addEventListener("change", obsChanged); $("obsLon").addEventListener("change", obsChanged);
+  ["obsLat", "obsLon", "obsAlt", "obsNS", "obsEW", "obsMode"].forEach(function (id) { $(id).addEventListener("change", obsChanged); });
   $("obsGeo").addEventListener("click", function () {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(function (p) {
-      $("obsLat").value = p.coords.latitude.toFixed(3); $("obsLon").value = p.coords.longitude.toFixed(3); obsChanged();
+      obs.lat = p.coords.latitude; obs.lon = p.coords.longitude;
+      if (isFinite(p.coords.altitude) && p.coords.altitude !== null) obs.alt = Math.round(p.coords.altitude);
+      fillObsBoxes(); obsChanged();
     });
   });
+
+  // time zone: "local", "UTC", then every IANA zone the browser knows
+  function buildZones() {
+    var sl = $("obsTz"), names = [];
+    try { names = Intl.supportedValuesOf("timeZone"); } catch (e) { names = []; }
+    PLACES.forEach(function (p) { if (names.indexOf(p[4]) < 0) names.push(p[4]); });
+    names = names.filter(function (n) { return n !== "UTC"; }).sort();
+    sl.textContent = "";
+    [["local", "Your device's time zone"], ["UTC", "UTC"]].concat(names.map(function (n) { return [n, n.replace(/_/g, " ")]; })).forEach(function (z) {
+      var o = document.createElement("option"); o.value = z[0]; o.textContent = z[1]; sl.appendChild(o);
+    });
+    sl.value = zone;
+  }
+  function setZone(z, save) {
+    zone = U.zoneValid(z) ? z : "local";
+    if (save) lsSet("oma-tz", zone);
+    $("obsTz").value = zone;
+    $("dt").setAttribute("aria-label", "Date and time (" + zoneLabel() + ")");
+    $("dt").title = "Date and time in " + zoneLabel();
+    setDate(S.date); renderNotes(); refreshEphem();
+  }
+  $("obsTz").addEventListener("change", function () { setZone($("obsTz").value, true); });
+
+  // country and city lists (data/places/places.json, approximate city centres)
+  function loadPlaces() {
+    fetch("data/places/places.json").then(function (r) { return r.json(); }).then(function (j) {
+      PLACES = j.places || [];
+      var cs = {}; PLACES.forEach(function (p) { cs[p[1]] = 1; });
+      var sl = $("obsCountry"); sl.textContent = "";
+      var o0 = document.createElement("option"); o0.value = ""; o0.textContent = "Choose a country"; sl.appendChild(o0);
+      Object.keys(cs).sort().forEach(function (c) { var o = document.createElement("option"); o.value = c; o.textContent = c; sl.appendChild(o); });
+      fillCities(""); buildZones();
+    }).catch(function () { buildZones(); });
+  }
+  function fillCities(country) {
+    var sl = $("obsCity"); sl.textContent = "";
+    var o0 = document.createElement("option"); o0.value = ""; o0.textContent = country ? "Choose a city" : "(choose a country first)"; sl.appendChild(o0);
+    PLACES.forEach(function (p, i) { if (p[1] === country) { var o = document.createElement("option"); o.value = i; o.textContent = p[0]; sl.appendChild(o); } });
+  }
+  $("obsCountry").addEventListener("change", function () { fillCities($("obsCountry").value); });
+  $("obsCity").addEventListener("change", function () {
+    var p = PLACES[parseInt($("obsCity").value, 10)];
+    if (!p) return;
+    obs.lat = p[2]; obs.lon = p[3]; fillObsBoxes(); obsChanged(); setZone(p[4], true);
+  });
+  fillObsBoxes();
+
+  /* ---- orbit the Moon: the view turns about the polar axis at a chosen rate -------------------------------------- */
+  // "<" moves the surface to the left on screen (the view longitude increases), ">" to the right. Speed is degrees of
+  // longitude per second; the 10, 5, 1, 0.5 and 0.2 steps follow Virtual Moon Atlas, whose unit is not documented.
+  var orbit = { dir: 0, last: 0, frames: 0, mark: 0, raf: 0 };
+  function orbitUi() {
+    $("orbL").setAttribute("aria-pressed", orbit.dir > 0 ? "true" : "false");
+    $("orbR").setAttribute("aria-pressed", orbit.dir < 0 ? "true" : "false");
+    if (!orbit.dir) $("orbFps").textContent = "";
+  }
+  function orbitTick(ts) {
+    if (!orbit.dir) { orbit.raf = 0; return; }
+    var dt = Math.min(0.25, (ts - orbit.last) / 1000), step = parseFloat($("orbSpeed").value) || 1;
+    orbit.last = ts; orbit.frames++;
+    if (ts - orbit.mark >= 1000) { $("orbFps").textContent = Math.round(orbit.frames * 1000 / (ts - orbit.mark)) + " fps"; orbit.frames = 0; orbit.mark = ts; }
+    view.lon0 = E.norm180(view.lon0 + orbit.dir * step * dt); view.free = true;
+    bumpInteract(); requestDraw();
+    orbit.raf = requestAnimationFrame(orbitTick);
+  }
+  function orbitSet(dir) {
+    orbit.dir = dir; orbitUi();
+    if (dir && !orbit.raf) { orbit.last = performance.now(); orbit.mark = orbit.last; orbit.frames = 0; orbit.raf = requestAnimationFrame(orbitTick); }
+  }
+  $("orbL").addEventListener("click", function () { orbitSet(orbit.dir > 0 ? 0 : 1); });
+  $("orbR").addEventListener("click", function () { orbitSet(orbit.dir < 0 ? 0 : -1); });
+  $("orbStop").addEventListener("click", function () { orbitSet(0); });
+  $("orbDir").addEventListener("click", function () { if (orbit.dir) orbitSet(-orbit.dir); });
+  canvas.addEventListener("pointerdown", function () { if (orbit.dir) orbitSet(0); });
+
+  /* ---- full screen, text size ------------------------------------------------------------------------------------ */
+  if (!document.documentElement.requestFullscreen) $("tFullscreen").hidden = true;
+  $("tFullscreen").addEventListener("click", function () {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(function () {});
+  });
+  document.addEventListener("fullscreenchange", function () {
+    $("tFullscreen").setAttribute("aria-pressed", document.fullscreenElement ? "true" : "false"); setTimeout(resize, 120);
+  });
+  var FONTS = [85, 100, 115, 130, 150], fontIdx = 1;
+  function setFont(i, save) {
+    fontIdx = Math.max(0, Math.min(FONTS.length - 1, i));
+    document.documentElement.style.fontSize = FONTS[fontIdx] + "%";
+    $("fontDown").disabled = fontIdx === 0; $("fontUp").disabled = fontIdx === FONTS.length - 1;
+    if (save) lsSet("oma-font", fontIdx);
+    setTimeout(resize, 0);
+  }
+  $("fontDown").addEventListener("click", function () { setFont(fontIdx - 1, true); });
+  $("fontUp").addEventListener("click", function () { setFont(fontIdx + 1, true); });
+  setFont(parseInt(lsGet("oma-font", "1"), 10) || 1, false);
+
+  /* ---- display defaults ---------------------------------------------------------------------------------------- */
+  function setCtl(id, v) { var el = $(id); if (el.type === "checkbox") el.checked = !!v; else el.value = v; }
+  function setPressed(id, on) { $(id).setAttribute("aria-pressed", on ? "true" : "false"); }
+  $("dispDefault").addEventListener("click", function () {
+    view.term = true; view.grid = false; view.labels = true; view.density = 0.5; view.bright = 1.6; view.libr = true; view.free = false;
+    view.manualSun = false; view.scale = true; view.shortNames = false; view.marks = true; view.centerLabels = false; view.gridStep = 30;
+    view.termLine = false; view.earth = false; view.markSize = 2.5; view.marksOnly = false; view.detail = 1200; view.sx = 1; view.sy = 1;
+    ov.on = false; ov.opacity = 0.5; markHidden = false;
+    setPressed("tTerm", true); setPressed("tLib", true); setPressed("tGrid", false); setPressed("tLabels", true); setPressed("tFlipNS", false); setPressed("tFlipEW", false);
+    setCtl("density", 0.5); setCtl("bright", 1.6); setCtl("sunManual", false); $("sun").disabled = true;
+    setCtl("oScale", true); setCtl("oMarks", true); setCtl("oCenter", false); setCtl("oTermLine", false); setCtl("oEarth", false);
+    setCtl("oShort", false); setCtl("oMarksOnly", false); setCtl("markSize", 2.5); setCtl("renderDetail", 1200); setCtl("gridStep", 30);
+    setCtl("ovOn", false); setCtl("ovOpacity", 0.5);
+    for (var t in view.hidden) delete view.hidden[t];
+    Array.prototype.forEach.call($("filterList").querySelectorAll("input"), function (c) { c.checked = true; });
+    recompute();
+  });
+
+  /* ---- databases: the gazetteer, plus the Lunar 100 targets as a second set -------------------------------------- */
+  $("dbL100").addEventListener("change", function () {
+    L100.on = $("dbL100").checked;
+    if (L100.on && !L100.rows) {
+      fetch("data/lunar100/lunar100.json").then(function (r) { return r.json(); }).then(function (j) {
+        L100.rows = j.rows.filter(function (r) { return r[3] !== null && r[4] !== null; }); requestDraw();
+      }).catch(function () { L100.on = false; $("dbL100").checked = false; });
+    }
+    requestDraw();
+  });
+
+  /* ---- start-up credits ---------------------------------------------------------------------------------------- */
+  var splashT0 = Date.now(), splashDone = false;
+  function splashHide() { if (splashDone) return; splashDone = true; $("splash").hidden = true; try { sessionStorage.setItem("oma-splash", "1"); } catch (e) {} }
+  window.OMA.splashReady = function () { splashReady(); };
+  function splashReady() { // called when the features and the first map level are in
+    if (splashDone) return;
+    $("splashState").textContent = "Ready";
+    setTimeout(splashHide, Math.max(0, 1800 - (Date.now() - splashT0)));
+  }
+  (function () {
+    var seen = false; try { seen = sessionStorage.getItem("oma-splash") === "1"; } catch (e) {}
+    if (seen) { splashDone = true; return; }
+    $("splash").hidden = false;
+    $("splashGo").addEventListener("click", splashHide);
+    document.addEventListener("keydown", function (e) { if (e.key === "Escape") splashHide(); });
+  })();
+
+  /* ---- glossary: short original definitions (data/glossary/glossary.json), a tree of terms with previous and next ---- */
+  var GL = { list: null, idx: 0 };
+  function glShow(i) {
+    if (!GL.list || !GL.list.length) return;
+    GL.idx = (i + GL.list.length) % GL.list.length;
+    var e = GL.list[GL.idx], box = $("glEntry");
+    box.textContent = "";
+    var h = document.createElement("h3"), c = document.createElement("p"), d = document.createElement("p");
+    h.textContent = e.t; c.className = "gloss-cat"; c.textContent = e.c; d.textContent = e.d;
+    box.appendChild(h); box.appendChild(c); box.appendChild(d);
+    Array.prototype.forEach.call($("glTree").querySelectorAll("button"), function (b) { b.setAttribute("aria-current", b.dataset.i === String(GL.idx) ? "true" : "false"); });
+  }
+  function glBuild(j) {
+    GL.list = j.entries;
+    var tree = $("glTree"), cats = {}, order = [];
+    tree.textContent = "";
+    GL.list.forEach(function (e, i) { if (!cats[e.c]) { cats[e.c] = []; order.push(e.c); } cats[e.c].push(i); });
+    order.forEach(function (c, ci) {
+      var det = document.createElement("details"), sm = document.createElement("summary");
+      det.open = ci === 0; sm.textContent = c; det.appendChild(sm);
+      cats[c].forEach(function (i) {
+        var b = document.createElement("button"); b.type = "button"; b.dataset.i = String(i); b.textContent = GL.list[i].t;
+        b.addEventListener("click", function () { glShow(i); });
+        det.appendChild(b);
+      });
+      tree.appendChild(det);
+    });
+    glShow(0);
+  }
+  $("mGlossary").addEventListener("click", function () {
+    $("glossDlg").showModal();
+    if (!GL.list) fetch("data/glossary/glossary.json").then(function (r) { return r.json(); }).then(glBuild)
+      .catch(function () { $("glEntry").textContent = "The glossary could not be loaded."; });
+  });
+  $("glPrev").addEventListener("click", function () { glShow(GL.idx - 1); });
+  $("glNext").addEventListener("click", function () { glShow(GL.idx + 1); });
+  $("glClose").addEventListener("click", function () { $("glossDlg").close(); });
+
+  /* ---- telescope: ASCOM Alpaca over REST (scope.js) ----------------------------------------------------------------- */
+  var TS = window.OMA.scope, scope = { c: null, caps: {}, st: null, timer: 0, eqSys: 1, rates: [] };
+  ["aHost", "aPort", "aDevice", "aUser"].forEach(function (id) { var v = lsGet("oma-" + id, ""); if (v) $(id).value = v; });    // never the password
+  function sMsg(t) { $("aMsg").textContent = t; }
+  function sFail(e) {
+    var m = e && e.message ? e.message : String(e);
+    sMsg(/Failed to fetch|NetworkError|Load failed/i.test(m) ? "Could not reach the telescope server. Check the host and port, that the Alpaca server is running, and that it allows this page (CORS). From an https page only localhost works." : m);
+  }
+  function sUi() {
+    var on = !!scope.c, c = scope.caps;
+    $("aConnect").disabled = on; $("aDisconnect").disabled = !on;
+    $("aTrack").disabled = !on || !c.cansettracking; $("aPark").disabled = !on || !(c.canpark || c.canunpark); $("aAbort").disabled = !on;
+    $("aGoto").disabled = !on || !(c.canslewasync || c.canslew); $("aSync").disabled = !on || !c.cansync;
+    ["aN", "aS", "aE", "aW", "aStop", "aRate"].forEach(function (id) { $(id).disabled = !on || !c.canmoveaxis; });
+  }
+  function sShow() {
+    var s = scope.st; if (!s) { $("aStatus").textContent = ""; return; }
+    function hm(h) { if (h === null || h === undefined) return "n/a"; var hh = Math.floor(h), mm = Math.floor((h - hh) * 60), ss = Math.round(((h - hh) * 60 - mm) * 60); return hh + "h " + pad(mm) + "m " + pad(ss) + "s"; }
+    function dg(v) { return v === null || v === undefined ? "n/a" : v.toFixed(2) + "°"; }
+    var eq = { 0: "other", 1: "of date", 2: "J2000", 3: "J2050", 4: "B1950" }[scope.eqSys] || "?";
+    rows($("aStatus"), [["Right ascension (" + eq + ")", hm(s.rightascension)], ["Declination", dg(s.declination)], ["Azimuth", dg(s.azimuth)], ["Altitude", dg(s.altitude)],
+      ["Tracking", s.tracking === null ? "n/a" : s.tracking ? "on" : "off"], ["Parked", s.atpark === null ? "n/a" : s.atpark ? "yes" : "no"], ["Slewing", s.slewing ? "yes" : "no"],
+      ["Axis rates", scope.rates.length ? scope.rates.map(function (r) { return r.Minimum + " to " + r.Maximum + "°/s"; }).join(", ") : "not given"]]);
+    $("aTrack").setAttribute("aria-pressed", s.tracking ? "true" : "false");
+    $("aPark").textContent = s.atpark ? "Unpark" : "Park";
+  }
+  function sPoll() {
+    if (!scope.c) return;
+    scope.c.status().then(function (s) { scope.st = s; if (s.equatorialsystem !== null && s.equatorialsystem !== undefined) scope.eqSys = s.equatorialsystem; sShow(); }).catch(sFail);
+  }
+  function sStart() { clearInterval(scope.timer); scope.timer = setInterval(sPoll, parseInt($("aRead").value, 10) || 2000); sPoll(); }
+  function sClient() {
+    ["aHost", "aPort", "aDevice", "aUser"].forEach(function (id) { lsSet("oma-" + id, $(id).value); });
+    return TS.AlpacaScope({ host: $("aHost").value.trim() || "localhost", port: parseInt($("aPort").value, 10) || 11111,
+                            device: parseInt($("aDevice").value, 10) || 0, user: $("aUser").value, pass: $("aPass").value });
+  }
+  $("aConnect").addEventListener("click", function () {
+    var c = sClient(); sMsg("Connecting");
+    c.connect().then(function () { return Promise.all([c.capabilities(), c.axisRates(0).catch(function () { return []; })]); }).then(function (r) {
+      scope.c = c; scope.caps = r[0]; scope.rates = r[1] || [];
+      var mx = scope.rates.reduce(function (m, x) { return Math.max(m, x.Maximum || 0); }, 0) || 1, rs = $("aRate"); rs.textContent = "";
+      [["Slow", mx * 0.05], ["Medium", mx * 0.3], ["Fast", mx]].forEach(function (x) { var o = document.createElement("option"); o.value = x[1]; o.textContent = x[0] + " (" + x[1].toPrecision(2) + "°/s)"; rs.appendChild(o); });
+      sUi(); sStart(); sMsg("Connected to " + c.base);
+    }).catch(function (e) { scope.c = null; sUi(); sFail(e); });
+  });
+  $("aDisconnect").addEventListener("click", function () {
+    var c = scope.c; clearInterval(scope.timer); scope.c = null; scope.st = null; sUi(); sShow();
+    if (c) c.disconnect().then(function () { sMsg("Disconnected"); }).catch(sFail);
+  });
+  $("aSelect").addEventListener("click", function () {
+    sClient().devices().then(function (list) {
+      var sl = $("aDevList"); sl.textContent = "";
+      list.filter(function (d) { return /telescope/i.test(d.DeviceType); }).forEach(function (d) {
+        var o = document.createElement("option"); o.value = d.DeviceNumber; o.textContent = d.DeviceName + " (device " + d.DeviceNumber + ")"; sl.appendChild(o);
+      });
+      sl.hidden = !sl.children.length; sMsg(sl.children.length ? "Pick a telescope, then Connect." : "The server lists no telescope.");
+      if (sl.children.length) $("aDevice").value = sl.value;
+    }).catch(sFail);
+  });
+  $("aDevList").addEventListener("change", function () { $("aDevice").value = $("aDevList").value; });
+  $("aConfig").addEventListener("click", function () { window.open(sClient().setupUrl(), "_blank", "noopener"); });
+  $("aAbout").addEventListener("click", function () {
+    sClient().description().then(function (d) { sMsg("Server: " + [d.ServerName, d.Manufacturer, d.ManufacturerVersion, d.Location].filter(Boolean).join(", ")); }).catch(sFail);
+  });
+  $("aTrack").addEventListener("click", function () { if (scope.c) scope.c.setTracking(!(scope.st && scope.st.tracking)).then(sPoll).catch(sFail); });
+  $("aPark").addEventListener("click", function () { if (scope.c) (scope.st && scope.st.atpark ? scope.c.unpark() : scope.c.park()).then(sPoll).catch(sFail); });
+  $("aAbort").addEventListener("click", function () { if (scope.c) scope.c.abort().then(sPoll).catch(sFail); });
+  // the selected feature as RA and Dec for right now, in the mount's equatorial system
+  function selectedRaDec() {
+    if (!sel) { sMsg("Select a feature on the atlas first."); return null; }
+    var now = new Date(), r = TS.featureRaDec(now, sel.lat, sel.lon, obs.lat, obs.lon, obs.alt);
+    if (r.z <= 0) { sMsg(sel.name + " is on the far side from Earth right now."); return null; }
+    var ra = r.ra, dec = r.dec;
+    if (scope.eqSys === 2) { var j = TS.toJ2000(now, ra, dec); ra = j.ra; dec = j.dec; }
+    else if (scope.eqSys !== 1) sMsg("The mount reports an equatorial system other than of-date or J2000; sending of-date coordinates.");
+    return { ra: ra, dec: dec };
+  }
+  $("aGoto").addEventListener("click", function () {
+    var p = scope.c && selectedRaDec(); if (!p) return;
+    var go = scope.caps.canslewasync ? scope.c.slewTo(p.ra, p.dec) : Promise.reject(new Error("This mount cannot slew asynchronously."));
+    go.then(function () { sMsg("Slewing to " + sel.name); sPoll(); }).catch(sFail);
+  });
+  $("aSync").addEventListener("click", function () {
+    var p = scope.c && selectedRaDec(); if (!p) return;
+    scope.c.syncTo(p.ra, p.dec).then(function () { sMsg("Mount synced on " + sel.name); sPoll(); }).catch(sFail);
+  });
+  [["aN", 1, 1], ["aS", 1, -1], ["aE", 0, 1], ["aW", 0, -1]].forEach(function (d) {
+    var b = $(d[0]);
+    function stop() { if (scope.c && b.dataset.moving) { delete b.dataset.moving; scope.c.moveAxis(d[1], 0).catch(sFail); } }
+    b.addEventListener("pointerdown", function () {
+      var rate = parseFloat($("aRate").value) || 0;
+      if (!scope.c || !rate) return; b.dataset.moving = "1";
+      scope.c.moveAxis(d[1], d[2] * rate).catch(sFail);
+    });
+    b.addEventListener("pointerup", stop); b.addEventListener("pointerleave", stop); b.addEventListener("pointercancel", stop);
+  });
+  $("aStop").addEventListener("click", function () { if (scope.c) { scope.c.moveAxis(0, 0).then(function () { return scope.c.moveAxis(1, 0); }).then(function () { return scope.c.abort(); }).catch(sFail); } });
+  $("aRead").addEventListener("change", function () { if (scope.c) sStart(); });
+  $("aHide").addEventListener("click", function () { togglePop("popScope"); });
+  sUi();
 
   /* ---- notes and tabs ---------------------------------------------------------------------------------- */
   var TABS = [["tabInfo", "paneInfo"], ["tabNotes", "paneNotes"], ["tabEphem", "paneEphem"], ["tabList", "paneList"]];
@@ -879,8 +1368,9 @@
           measure.pts.push(s);
           if (measure.pts.length === 2) {
             var r = distBearing(measure.pts[0], measure.pts[1]);
-            $("readout").textContent = "Distance " + r.km.toFixed(1) + " km (great circle), bearing " + r.bearing.toFixed(0) + "°. Click to measure again, Esc to stop.";
-          } else $("readout").textContent = "Click a second point.";
+            measure.text = "Distance " + r.km.toFixed(1) + " km (great circle), bearing " + r.bearing.toFixed(0) + "°";
+            $("readoutText").textContent = measure.text + ". Click to measure again, Esc to stop."; $("readoutActions").hidden = false;
+          } else { $("readoutText").textContent = "Click a second point."; $("readoutActions").hidden = true; }
           requestDraw();
         }
       } else {
@@ -917,11 +1407,14 @@
 
   /* ---- go ----------------------------------------------------------------------------------------------------- */
   $("protoFlag").textContent = "Prototype";
+  zone = U.zoneValid(lsGet("oma-tz", "local")) ? lsGet("oma-tz", "local") : "local";
+  $("dt").setAttribute("aria-label", "Date and time (" + zoneLabel() + ")");
   window.addEventListener("resize", function () { resize(); scheduleList(); });
   setDate(new Date());
   loadLayer(LAYERS[0]);
   loadFeatures();
   loadAtlas();
+  loadPlaces();
   fovFill();
   resize();
   setInterval(function () { if (!S.live) return; }, 60000);

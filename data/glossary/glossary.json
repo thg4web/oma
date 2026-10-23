@@ -1,0 +1,225 @@
+{
+"note": "Original short definitions written for OMA (2026-10-22). Not taken from Virtual Moon Atlas or any other source text. Needs Astrid's review.",
+"entries": [
+{
+"c": "Feature types",
+"t": "Mare (plural maria)",
+"d": "A large dark plain of solidified basalt lava that flooded an impact basin. The name is Latin for sea, from the early telescope observers who thought they were oceans. Maria cover about 16 percent of the Moon and most of them are on the near side."
+},
+{
+"c": "Feature types",
+"t": "Crater",
+"d": "A bowl-shaped depression made by an impact. Small craters are simple bowls. Larger ones have flat floors, wall terraces and a central peak. Nearly every named round feature on the Moon is a crater."
+},
+{
+"c": "Feature types",
+"t": "Central peak",
+"d": "A hill or cluster of hills in the middle of a large crater, formed when the crater floor rebounded just after the impact. Craters wider than roughly 20 km often have one."
+},
+{
+"c": "Feature types",
+"t": "Wall terraces",
+"d": "Step-like ledges on the inner wall of a large crater, made when the steep rim collapsed inward soon after the impact."
+},
+{
+"c": "Feature types",
+"t": "Ejecta blanket",
+"d": "The sheet of rock thrown out of a crater and laid down around it. Fresh craters have rough, bright ejecta. Old ones have it worn down or buried."
+},
+{
+"c": "Feature types",
+"t": "Ray system",
+"d": "Bright streaks of fine ejecta that radiate from a young crater, such as Tycho and Copernicus. Rays fade over geologic time, so a crater with rays is relatively recent. They show best near full Moon, when the Sun is high."
+},
+{
+"c": "Feature types",
+"t": "Ghost crater",
+"d": "A crater that was mostly flooded by lava, leaving only a faint rim above the surface. It shows best in low, raking sunlight."
+},
+{
+"c": "Feature types",
+"t": "Basin",
+"d": "A very large impact structure, hundreds of kilometres across and often ringed by mountains. Many basins on the near side were later filled with lava and became maria, such as Mare Imbrium."
+},
+{
+"c": "Feature types",
+"t": "Mons (plural montes)",
+"d": "A mountain, or a mountain range when the plural is used. The lunar mountain ranges, such as the Apennines, are mostly pieces of basin rims."
+},
+{
+"c": "Feature types",
+"t": "Rima (plural rimae)",
+"d": "A rille: a long, narrow, trench-like channel. Sinuous rilles wind like rivers and are collapsed or open lava channels. Straight rilles are usually fault valleys. See also graben."
+},
+{
+"c": "Feature types",
+"t": "Graben",
+"d": "A strip of ground that dropped down between two parallel faults. Many straight rilles are grabens."
+},
+{
+"c": "Feature types",
+"t": "Vallis (plural valles)",
+"d": "A valley. The big ones, like Vallis Alpes, cut across mountain ranges or highland terrain."
+},
+{
+"c": "Feature types",
+"t": "Dorsum (plural dorsa)",
+"d": "A wrinkle ridge: a low, winding ridge on a mare surface made where the lava plain buckled as it cooled and sank. Wrinkle ridges are subtle and show best with low Sun."
+},
+{
+"c": "Feature types",
+"t": "Rupes",
+"d": "A scarp or cliff, the edge of a fault. Rupes Recta, the Straight Wall, is the best known."
+},
+{
+"c": "Feature types",
+"t": "Catena (plural catenae)",
+"d": "A chain of craters in a line. Some are impact chains from a broken-up projectile and some are collapse pits."
+},
+{
+"c": "Feature types",
+"t": "Dome",
+"d": "A low, rounded swelling on a mare, a few kilometres to tens of kilometres across, usually a small lava shield volcano. Domes are best seen with the Sun very low."
+},
+{
+"c": "Feature types",
+"t": "Promontorium",
+"d": "A cape: a mountainous headland that sticks out into a mare."
+},
+{
+"c": "Feature types",
+"t": "Palus, Lacus, Sinus",
+"d": "Names for dark areas smaller than a mare. Palus is a marsh, Lacus a lake and Sinus a bay. All are regions of the same dark basaltic plains."
+},
+{
+"c": "Feature types",
+"t": "Terra (highlands)",
+"d": "The bright, rough, heavily cratered uplands. They are older than the maria and are made mostly of the pale rock anorthosite."
+},
+{
+"c": "Lighting and geometry",
+"t": "Terminator",
+"d": "The line between the lit and the dark part of the Moon, where the Sun is on the horizon. Craters and ridges near the terminator throw long shadows and show their relief best."
+},
+{
+"c": "Lighting and geometry",
+"t": "Sun elevation",
+"d": "The angle of the Sun above the local horizon at a spot on the Moon. At 0 degrees the Sun is rising or setting. Low values give long shadows and strong relief. High values give flat lighting and show brightness differences instead."
+},
+{
+"c": "Lighting and geometry",
+"t": "Colongitude",
+"d": "A number that says where the morning terminator is: 90 degrees minus the longitude of the sub-solar point. It is near 0 at first quarter, 90 at full Moon, 180 at last quarter and 270 around new Moon. Observers use it to say what lighting a feature will have."
+},
+{
+"c": "Lighting and geometry",
+"t": "Selenographic coordinates",
+"d": "Longitude and latitude on the Moon. Longitude is counted from the mean sub-Earth meridian and is positive toward the east, the side where Mare Crisium lies (the IAU convention). Latitude is positive to the north."
+},
+{
+"c": "Lighting and geometry",
+"t": "Sub-solar point",
+"d": "The spot on the Moon where the Sun is directly overhead. Its longitude and the colongitude add up to 90 degrees."
+},
+{
+"c": "Lighting and geometry",
+"t": "Sub-Earth point",
+"d": "The spot on the Moon where the Earth is directly overhead. It lies near the centre of the visible disc and wanders a few degrees because of libration."
+},
+{
+"c": "Lighting and geometry",
+"t": "Libration",
+"d": "A slow rocking of the Moon that lets us see slightly more than half of its surface over time, 59 percent in all. Libration in longitude comes from the Moon's uneven speed along its orbit, libration in latitude from the tilt of its orbit, and a small diurnal libration from the observer's own position."
+},
+{
+"c": "Lighting and geometry",
+"t": "Phase and age",
+"d": "The phase is how much of the visible disc is lit. The age is the time since the last new Moon, from 0 to about 29.5 days."
+},
+{
+"c": "Lighting and geometry",
+"t": "Phase angle",
+"d": "The angle at the Moon between the Sun and the Earth. It is 0 degrees at full Moon and near 180 degrees at new Moon."
+},
+{
+"c": "Lighting and geometry",
+"t": "Elongation",
+"d": "The angle on the sky between the Moon and the Sun as seen from Earth."
+},
+{
+"c": "Lighting and geometry",
+"t": "Earthshine",
+"d": "The faint glow on the dark part of a thin crescent Moon, sunlight reflected from the Earth onto the Moon and back again. It is also called the old Moon in the new Moon's arms."
+},
+{
+"c": "Lighting and geometry",
+"t": "Limb",
+"d": "The edge of the visible disc. Features near the limb are strongly foreshortened and libration decides how much of them we can see."
+},
+{
+"c": "Lighting and geometry",
+"t": "Albedo",
+"d": "How much light a surface reflects. The maria have low albedo and look dark, the highlands and young rays have high albedo and look bright."
+},
+{
+"c": "Lighting and geometry",
+"t": "Topocentric and geocentric",
+"d": "A topocentric position is as seen from your own place on the Earth. A geocentric position is as seen from the Earth's centre. For the Moon the two can differ by up to about a degree, which matters for rise and set times and altitude."
+},
+{
+"c": "Observing",
+"t": "Seeing",
+"d": "The steadiness of the air above the telescope. Poor seeing makes lunar detail shimmer and blur. It limits fine detail more often than the telescope does."
+},
+{
+"c": "Observing",
+"t": "Raking light",
+"d": "Sunlight that strikes the surface at a low angle, exaggerating small relief. It is the best light to see rilles, domes and wrinkle ridges."
+},
+{
+"c": "Observing",
+"t": "Field of view",
+"d": "The part of the sky a telescope and eyepiece or camera shows. True field = eyepiece apparent field / magnification. For a camera it follows from the sensor size and the focal length."
+},
+{
+"c": "Observing",
+"t": "Arcsecond per pixel",
+"d": "The image scale of a camera on a telescope: pixel size in microns divided by focal length in millimetres, times 206.265."
+},
+{
+"c": "Observing",
+"t": "Lunar 100",
+"d": "A list of 100 lunar features and phenomena, put together by Charles Wood for Sky and Telescope in 2004, as a lunar parallel to the Messier list. Each one illustrates some lunar process or history."
+},
+{
+"c": "Geology",
+"t": "Regolith",
+"d": "The layer of broken rock and dust that covers the lunar surface, ground up by billions of years of impacts."
+},
+{
+"c": "Geology",
+"t": "KREEP",
+"d": "A rock type rich in potassium (K), rare-earth elements (REE) and phosphorus (P), concentrated in the Procellarum and Imbrium region of the near side."
+},
+{
+"c": "Geology",
+"t": "Mascon",
+"d": "A mass concentration: a buried dense region, usually under a large mare, where gravity is slightly stronger than around it."
+},
+{
+"c": "Geology",
+"t": "Near side and far side",
+"d": "The near side always faces the Earth because the Moon rotates once for each orbit (synchronous rotation). The far side is the other hemisphere, which libration never shows fully."
+},
+{
+"c": "Geology",
+"t": "Geologic periods",
+"d": "The lunar time scale, oldest to youngest, is Pre-Nectarian, Nectarian, Imbrian, Eratosthenian and Copernican. Craters are dated by their state of erosion and how many smaller craters lie on them."
+},
+{
+"c": "Geology",
+"t": "Unified Geologic Map",
+"d": "The USGS map of the Moon that combines the older regional maps into one global set of geologic units, made by Fortezzo, Spudis and Harrel in 2020. It is available in the layers menu of this atlas."
+}
+]
+}
