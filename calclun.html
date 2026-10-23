@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CalcLun | Observer's Moon Atlas</title>
+<meta name="description" content="CalcLun: Moon ephemeris by year, month and day for your location, rise and set, twilight, phases and libration, and predictions of when a formation is well lit.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230a0e16'/%3E%3Ccircle cx='16' cy='16' r='9' fill='none' stroke='%232F78BD' stroke-width='2.5'/%3E%3Cpath d='M16 7a9 9 0 0 0 0 18z' fill='%232F78BD'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Audiowide&family=Exo+2:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="lunar100.css">
+<link rel="stylesheet" href="calclun.css">
+</head>
+<body>
+<a class="skip" href="#main">Skip to the tables</a>
+
+<header class="site-head">
+  <span class="asterism" role="img" aria-label="Pleiades asterism"></span>
+  <h1 class="wordmark">CALCLUN</h1>
+  <nav class="menubar" aria-label="Site">
+    <a href="index.html" id="goAtlas">Moon atlas</a>
+    <button type="button" id="mSetup">Setup</button>
+    <button type="button" id="mEphem">Save ephemeris</button>
+    <button type="button" id="mPrint">Print</button>
+    <button type="button" id="mHelp">Help</button>
+    <button type="button" id="mAbout">About</button>
+    <a href="https://astro.thgnetworks.com">Henderson Astronomy</a>
+  </nav>
+  <span class="spacer"></span>
+  <button id="themeToggle" class="round" type="button" aria-label="Switch colour theme" title="Switch colour theme"><span aria-hidden="true">◑</span></button>
+</header>
+
+<section class="bar" aria-label="Date">
+  <button id="today" type="button" class="btn" title="Go to today">Today</button>
+  <button id="dec" type="button" class="btn" aria-label="Earlier" title="Earlier by a year, month or day, as the tab">&lt;</button>
+  <button id="inc" type="button" class="btn" aria-label="Later" title="Later by a year, month or day, as the tab">&gt;</button>
+  <label>Year <input id="yy" type="number" min="1" max="9999" step="1" value="2026"></label>
+  <label>Month <select id="mm"></select></label>
+  <label>Day <input id="dd" type="number" min="1" max="31" step="1" value="1"></label>
+  <span class="by" id="by">by year</span>
+  <span class="progress" id="where"></span>
+</section>
+
+<main id="main" class="cl">
+  <div class="tabs" role="tablist" aria-label="CalcLun">
+    <button role="tab" id="tYear" aria-selected="true" aria-controls="pYear" type="button">Year</button>
+    <button role="tab" id="tMonth" aria-selected="false" aria-controls="pMonth" type="button">Month</button>
+    <button role="tab" id="tDay" aria-selected="false" aria-controls="pDay" type="button">Day</button>
+    <button role="tab" id="tPred" aria-selected="false" aria-controls="pPred" type="button">Prediction</button>
+  </div>
+  <p class="status" id="status" role="status"></p>
+
+  <!-- Year -->
+  <section id="pYear" role="tabpanel" aria-labelledby="tYear">
+    <h2 id="yTitle">Year</h2>
+    <p class="hint">The Moon's phase on each day of the year, at local noon. A ring marks the day of a quarter. Click a day to see that day, a month name to see the month.</p>
+    <div class="cal-wrap"><canvas id="yCal" aria-label="Moon phase calendar for the year" role="img"></canvas></div>
+    <div class="two">
+      <div>
+        <h3>Moon phase</h3>
+        <table class="grid" id="gPhase"><thead><tr><th>New Moon</th><th>First quarter</th><th>Full Moon</th><th>Last quarter</th></tr></thead><tbody></tbody></table>
+      </div>
+      <div>
+        <h3>Libration extrema</h3>
+        <table class="grid" id="gLib"><thead><tr><th title="Greatest libration east in longitude">Max east</th><th title="Greatest libration west in longitude">Max west</th><th title="Greatest libration north in latitude">Max north</th><th title="Greatest libration south in latitude">Max south</th></tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+    <h3>The Moon through the year</h3>
+    <p class="hint">Dates across, the hours of the day down in UT (the centre hour is your choice below, 18:00 UT to start), the sky shaded by the Sun's twilight. A small Moon of the right phase marks the moonset on a day the Moon is waxing and the moonrise on a day it is waning, so it shows when the Moon is in the sky. It is drawn every other day, and larger on the day of each major phase. An amber ring marks a quarter, P is perigee and A is apogee. Times are UT all year, so daylight saving does not bend the chart. Click a day to open it.</p>
+    <div class="row"><label>Centre the chart on <select id="yCentre" aria-label="Time halfway down the chart"></select></label></div>
+    <div class="cal-wrap"><canvas id="yChart" class="chart almanac" aria-label="The Moon through the year: phase of the Moon at its moonset or moonrise for each day, against the night" role="img"></canvas></div>
+    <p class="hint" id="yHover" aria-live="off">&nbsp;</p>
+  </section>
+
+  <!-- Month -->
+  <section id="pMonth" role="tabpanel" aria-labelledby="tMonth" hidden>
+    <h2 id="mTitle">Month</h2>
+    <p class="hint">Values at 00:00 UT on each date, rise and set in local time. Click a column heading to graph it, a day to open the day.</p>
+    <div class="tablewrap wide"><table class="grid sticky" id="gMonth"><thead></thead><tbody></tbody></table></div>
+    <div class="two">
+      <div><h3>Phases of the month</h3><dl class="kv" id="mPhases"></dl></div>
+      <div><label>Select graph <select id="gSel"></select></label></div>
+    </div>
+    <canvas id="mChart" class="chart" aria-label="Graph of the selected column through the month" role="img"></canvas>
+    <div id="mLibWrap" hidden>
+      <h3>Libration through the month</h3>
+      <canvas id="mLib" class="chart tall" aria-label="Libration in longitude and latitude through the month, one point per day" role="img"></canvas>
+    </div>
+    <div id="mTwWrap" hidden>
+      <h3>Twilight, Moon rise and set through the month</h3>
+      <canvas id="mTw" class="chart" aria-label="Twilight and Moon rise and set through the month" role="img"></canvas>
+    </div>
+  </section>
+
+  <!-- Day -->
+  <section id="pDay" role="tabpanel" aria-labelledby="tDay" hidden>
+    <h2 id="dTitle">Day</h2>
+    <div class="dayhead">
+      <canvas id="dPhase" width="96" height="96" aria-label="Moon phase" role="img"></canvas>
+      <dl class="kv" id="dRise"></dl>
+      <div class="timebox">
+        <span class="lab">Time</span>
+        <label>Hour <input id="dh" type="number" min="0" max="23" value="0"></label>
+        <label>Min <input id="dmin" type="number" min="0" max="59" value="0"></label>
+        <label>Sec <input id="ds" type="number" min="0" max="59" value="0"></label>
+      </div>
+    </div>
+    <div class="two">
+      <div>
+        <h3>Altitude of the Moon</h3>
+        <p class="hint">Dark background is night, shades are the twilights. Move the pointer over the graph to read the altitude and azimuth.</p>
+        <canvas id="dChart" class="chart" aria-label="Altitude of the Moon through the day" role="img"></canvas>
+        <p class="hint mono" id="dHover">&nbsp;</p>
+      </div>
+      <div>
+        <h3 id="dAtTitle">At the chosen time</h3>
+        <dl class="kv" id="dAt"></dl>
+      </div>
+    </div>
+    <h3>Hour by hour</h3>
+    <div class="tablewrap wide"><table class="grid sticky" id="gDay"><thead></thead><tbody></tbody></table></div>
+  </section>
+
+  <!-- Prediction -->
+  <section id="pPred" role="tabpanel" aria-labelledby="tPred" hidden>
+    <h2>Prediction</h2>
+    <div class="predgrid">
+      <fieldset>
+        <legend>Formation</legend>
+        <label>Search by name <input id="pName" type="search" placeholder="At least 3 letters" autocomplete="off"></label>
+        <label>Pick <select id="pPick" size="5" aria-label="Matching formations"></select></label>
+        <div class="row">
+          <label>Longitude <input id="pLon" type="number" step="0.01" min="0" max="180"></label>
+          <label>&nbsp;<select id="pEW" aria-label="East or west"><option value="1">E</option><option value="-1">W</option></select></label>
+          <label>Latitude <input id="pLat" type="number" step="0.01" min="0" max="90"></label>
+          <label>&nbsp;<select id="pNS" aria-label="North or south"><option value="1">N</option><option value="-1">S</option></select></label>
+        </div>
+        <p class="hint" id="pFormName">&nbsp;</p>
+      </fieldset>
+      <fieldset>
+        <legend>Prediction duration</legend>
+        <label>Years <input id="pYears" type="number" min="1" max="10" step="1" value="1"></label>
+        <p class="hint">From the first of the chosen month.</p>
+      </fieldset>
+      <fieldset>
+        <legend>Constraints</legend>
+        <label class="chk"><input id="cNight" type="checkbox"> Only night events: Sun more than <input id="cTw" type="number" min="0" max="18" step="1" value="6" class="n3"> degree below horizon</label>
+        <label class="chk"><input id="cMoon" type="checkbox"> Moon visible from the observatory: more than <input id="cMin" type="number" min="0" max="90" step="1" value="15" class="n3"> degree above horizon</label>
+      </fieldset>
+    </div>
+
+    <div class="tabs sub" role="tablist" aria-label="Prediction kind">
+      <button role="tab" id="sCo" aria-selected="true" aria-controls="qCo" type="button">Colongitude</button>
+      <button role="tab" id="sSun" aria-selected="false" aria-controls="qSun" type="button">Sun elevation on a formation</button>
+      <button role="tab" id="sLib" aria-selected="false" aria-controls="qLib" type="button">Libration</button>
+    </div>
+
+    <div id="qCo" role="tabpanel" aria-labelledby="sCo">
+      <h3>Prediction for colongitude</h3>
+      <div class="row">
+        <label>Colongitude <input id="coV" type="number" min="0" max="360" step="0.1" value="10"></label>
+        <label>+/- <input id="coD" type="number" min="0.1" max="30" step="0.1" value="1"></label>
+        <button type="button" class="btn" id="coGo">Compute</button>
+      </div>
+      <div class="tablewrap"><table class="grid" id="gCo"><thead><tr><th>Start</th><th>End</th><th>Sub-solar latitude</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div id="qSun" role="tabpanel" aria-labelledby="sSun" hidden>
+      <h3>Sun elevation range on the formation</h3>
+      <div class="row">
+        <label>Minimum <input id="seMin" type="number" min="0" max="90" step="0.5" value="3"></label>
+        <label>Maximum <input id="seMax" type="number" min="0" max="90" step="0.5" value="12"></label>
+        <button type="button" class="btn" id="seGo">Compute</button>
+      </div>
+      <div class="two">
+        <div><h3>Prediction for increasing Sun elevation</h3>
+          <div class="tablewrap"><table class="grid" id="gSe1"><thead><tr><th>Start</th><th>End</th><th>Libration longitude</th><th>Libration latitude</th></tr></thead><tbody></tbody></table></div></div>
+        <div><h3>Prediction for decreasing Sun elevation</h3>
+          <div class="tablewrap"><table class="grid" id="gSe2"><thead><tr><th>Start</th><th>End</th><th>Libration longitude</th><th>Libration latitude</th></tr></thead><tbody></tbody></table></div></div>
+      </div>
+    </div>
+    <div id="qLib" role="tabpanel" aria-labelledby="sLib" hidden>
+      <h3>Prediction for libration, with the formation illuminated</h3>
+      <div class="row">
+        <label>Longitude libration at least <input id="lbLon" type="number" min="0" max="10" step="0.1" value="2"></label>
+        <label>&nbsp;<select id="lbEW" aria-label="East or west"><option value="1">East</option><option value="-1">West</option></select></label>
+        <label>Latitude libration at least <input id="lbLat" type="number" min="0" max="10" step="0.1" value="0"></label>
+        <label>&nbsp;<select id="lbNS" aria-label="North or south"><option value="1">North</option><option value="-1">South</option></select></label>
+        <button type="button" class="btn" id="lbGo">Compute</button>
+      </div>
+      <div class="tablewrap"><table class="grid" id="gLb"><thead><tr><th>Start</th><th>End</th><th>Sun elevation at start</th><th>Sun elevation at end</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <p class="hint" id="pHint">Double-click a row to open the atlas at the middle of that period, centred on the formation.</p>
+  </section>
+</main>
+
+<dialog id="dSetup">
+  <form method="dialog" id="fSetup">
+    <h2>Setup</h2>
+    <div class="row">
+      <label>Country <select id="sCountry"></select></label>
+      <label>City <select id="sCity"></select></label>
+    </div>
+    <div class="row">
+      <label>Latitude <input id="sLat" type="number" step="0.01" min="0" max="90"></label>
+      <label>&nbsp;<select id="sNS"><option value="1">N</option><option value="-1">S</option></select></label>
+      <label>Longitude <input id="sLon" type="number" step="0.01" min="0" max="180"></label>
+      <label>&nbsp;<select id="sEW"><option value="1">E</option><option value="-1">W</option></select></label>
+      <label>Altitude (m) <input id="sAlt" type="number" step="1" min="-500" max="9000"></label>
+    </div>
+    <label>Time zone <select id="sTz"></select></label>
+    <p class="hint">Shared with the Moon atlas in this browser.</p>
+    <div class="actions"><button class="btn" value="ok" id="sOk">OK</button><button class="btn" value="cancel" formnovalidate>Cancel</button></div>
+  </form>
+</dialog>
+
+<dialog id="dEphem">
+  <form method="dialog" id="fEphem">
+    <h2>Save ephemeris</h2>
+    <div class="row">
+      <label>Start date <input id="eStart" type="date"></label>
+      <label>End date <input id="eEnd" type="date"></label>
+      <label>Step (hours) <input id="eStep" type="number" min="0.01" step="0.25" value="1"></label>
+    </div>
+    <p class="hint">A CSV file with the columns of the month table plus azimuth and altitude, for the chosen observatory. Dates are in the time zone set in Setup. Up to 100,000 rows.</p>
+    <div class="actions"><button class="btn" value="ok" id="eOk">Compute</button><button class="btn" value="cancel" formnovalidate>Cancel</button></div>
+  </form>
+</dialog>
+
+<dialog id="dText"><h2 id="dTextT"></h2><div id="dTextB"></div><div class="actions"><form method="dialog"><button class="btn">Close</button></form></div></dialog>
+
+<footer class="foot">
+  <p>Positions, phases, rise and set from <em>astronomy-engine</em> (MIT, Don Cross); libration and selenographic Sun position follow Meeus, <em>Astronomical Algorithms</em>, chapter 53, optical libration only, with the diurnal shift for the observer. CalcLun is the OMA workalike of Virtual Moon Atlas's CalcLun and does not use its code or data.</p>
+  <p>Part of <a href="index.html">Observer's Moon Atlas</a>. GPL-3.0-or-later.</p>
+</footer>
+
+<script src="vendor/astronomy.browser.min.js"></script>
+<script src="ephem.js"></script>
+<script src="util.js"></script>
+<script src="scope.js"></script>
+<script src="calclun-core.js"></script>
+<script src="calclun.js"></script>
+</body>
+</html>

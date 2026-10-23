@@ -632,7 +632,19 @@
     $("phaseIcon").title = "Moon " + (S.st.illum * 100).toFixed(0) + "% illuminated";
   }
 
-  // Applets menu: close on an outside click or Esc
+  // Hand-off to CalcLun (calclun.html): the date, observer, time zone and the selected feature go with the link
+  (function () {
+    var ln = $("mCalclun"); if (!ln) return;
+    function build() {
+      var q = ["date=" + encodeURIComponent(S.date.toISOString()), "lat=" + obs.lat, "lon=" + obs.lon, "alt=" + obs.alt];
+      if (zone !== "local") q.push("tz=" + encodeURIComponent(zone));
+      if (sel && String(sel.id).indexOf("L100-") !== 0) q.push("f=" + encodeURIComponent(sel.name), "flat=" + sel.lat, "flon=" + sel.lon);
+      ln.href = "calclun.html?" + q.join("&");
+    }
+    ["pointerdown", "focus", "mouseover", "click"].forEach(function (t) { ln.addEventListener(t, build); });
+  })();
+
+  // Lunlets menu (applets internally): close on an outside click or Esc
   (function () {
     var d = $("mApplets"); if (!d) return;
     document.addEventListener("click", function (e) { if (d.open && !d.contains(e.target)) d.open = false; });
@@ -1335,6 +1347,13 @@
   $("profHide").addEventListener("click", function () { togglePop("popProfile"); });
 
   $("mAbout").addEventListener("click", function () { $("aboutDlg").showModal(); });
+  // Location: open the observer settings (Ephemeris tab) from the menu bar
+  $("mLocation").addEventListener("click", function () {
+    document.body.classList.remove("panel-off"); $("tPanel").setAttribute("aria-pressed", "false"); setTimeout(resize, 0);
+    $("tabEphem").click(); $("obsSet").open = true;
+    $("obsSet").scrollIntoView && $("obsSet").scrollIntoView({ block: "nearest" });
+    $("obsCountry").focus();
+  });
 
   /* ---- observer location, altitude, time zone ------------------------------------------------------------------ */
   var PLACES = [];
