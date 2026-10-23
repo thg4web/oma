@@ -1,7 +1,8 @@
 /* Observer's Moon Atlas prototype.
    Globe: VMA WAC tiles (DEV ONLY, license pending), lit by the real Sun position for the chosen
    date from ephem.js. Features: IAU/USGS gazetteer export in data/dev (DEV ONLY).
-   No DEM relighting yet: the Sun lights the sphere, crater walls cast no shadows. */
+   Elevation: LOLA, 8 pixels per degree (data/dem). By default the Sun lights the sphere; "Phase with relief" tilts the surface
+   by the LOLA slope. Crater walls cast no shadows. */
 (function () {
   "use strict";
   var E = window.OMA && window.OMA.ephem, U = window.OMA && window.OMA.util;
@@ -43,16 +44,18 @@
   if (!E || !U) { $("fName").textContent = "EPHEMERIS FAILED TO LOAD"; return; }
 
   /* ---- state ---------------------------------------------------------------- */
-  var view = { lon0: 0, lat0: 0, zoom: 1, sx: 1, sy: 1, term: true, grid: false, labels: true, density: 0.5,
+  var view = { lon0: 0, lat0: 0, px: 0, py: 0, globe: false, zoom: 1, sx: 1, sy: 1, term: true, grid: false, labels: true, density: 0.5,
                bright: 1.6, libr: true, free: false, manualSun: false, sunLon: 35, hidden: {},
                scale: true, shortNames: false, marks: true, centerLabels: false, gridStep: 30,
-               termLine: false, earth: false, markSize: 2.5, marksOnly: false, detail: 1200 };
+               termLine: false, earth: false, markSize: 2.5, marksOnly: false, detail: 1200, baseMode: 0, reliefK: 3, lblStyle: 0 };
   var markHidden = false, exporting = false, exportPx = 0;
   var L100 = { on: false, rows: null };
-  var ov = { on: false, opacity: 0.5, data: null, w: 0, h: 0, loading: false };
+  var ov = { on: false, opacity: 0.5, data: null, w: 0, h: 0, loading: false, id: "geo" };
+  var db = { gaz: true, notes: false, noteIds: [] };
   var S = { date: new Date(), live: false, st: null, sunVec: [0, 0, 1] };
-  var FE = [], sel = null, matches = [], matchIdx = -1, ATLAS = {};
+  var FE = [], FEID = {}, sel = null, matches = [], matchIdx = -1, ATLAS = {};
   var measure = { on: false, pts: [], text: "" };
+  var prof = { data: null, scale: 0, hover: -1, ext: null, box: null };
   // Default observer is Greenwich, a neutral place. Visitors set their own, saved in their browser only.
   var obs = { lat: parseFloat(lsGet("oma-obs-lat", "51.48")), lon: parseFloat(lsGet("oma-obs-lon", "0")),
               alt: parseFloat(lsGet("oma-obs-alt", "0")) || 0, geo: lsGet("oma-obs-mode", "topo") === "geo" };
@@ -195,8 +198,51 @@
     im.src = "data/overlays/geology-usgs-4k.jpg";
   }
 
+  /* ---- elevation: LOLA grid (data/dem/ldem-8ppd.png), loaded the first time something needs it ------------------------- */
+  var DEM = { dem: null, slope: null, loading: false, failed: false, cbs: [], lut: null };
+  function loadDem(done) {
+    if (DEM.dem) { if (done) done(); return; }
+    if (done) DEM.cbs.push(done);
+    if (DEM.loading || DEM.failed) return;
+    DEM.loading = true;
+    var im = new Image();
+    im.onload = function () {
+      var c = document.createElement("canvas"); c.width = im.width; c.height = im.height;
+      var x = c.getContext("2d", { willReadFrequently: true }); x.drawImage(im, 0, 0);
+      DEM.dem = U.demFromRGBA(x.getImageData(0, 0, c.width, c.height).data, c.width, c.height); DEM.loading = false;
+      DEM.cbs.splice(0).forEach(function (f) { f(); });
+      requestDraw();
+    };
+    im.onerror = function () { DEM.loading = false; DEM.failed = true; DEM.cbs.splice(0); $("layerNote").textContent = "The elevation data could not be loaded."; };
+    im.src = "data/dem/ldem-8ppd.png";
+  }
+  function elevLut() {
+    if (DEM.lut) return DEM.lut;
+    var n = 512, l = new Uint8Array(n * 3);
+    for (var i = 0; i < n; i++) { var c = U.elevColour(-9500 + i / (n - 1) * 20500); l[i * 3] = c[0]; l[i * 3 + 1] = c[1]; l[i * 3 + 2] = c[2]; }
+    return (DEM.lut = l);
+  }
+  var OVERLAYS = [
+    { id: "geo", name: "Geologic units", cat: "Geology", origin: "USGS", note: "Colours show geologic units. Fortezzo, Spudis and Harrel (2020), USGS Unified Geologic Map of the Moon, CC0." },
+    { id: "elev", name: "Elevation colours", cat: "Topography", origin: "NASA LOLA", note: "Colour by height above the 1737.4 km reference sphere, blue low to white high, about 3.8 km per pixel. Elevation: LOLA, NASA / GSFC / LRO." }
+  ];
+  function ovNeeds() { if (ov.id === "geo") loadOverlay(); else loadDem(); }
+
   /* ---- view geometry ---------------------------------------------------------- */
-  function geom() { return { cx: W / 2, cy: H / 2, R: Math.min(W, H) * 0.46 * view.zoom }; }
+  function geom() { return { cx: W / 2 + view.px, cy: H / 2 + view.py, R: Math.min(W, H) * 0.46 * view.zoom }; }
+  // Earth view (VMA's visible side lock): the sphere stays put and dragging moves the picture; the disc edge may reach the centre
+  function clampPan() {
+    var R = Math.min(W, H) * 0.46 * view.zoom;
+    view.px = Math.max(-R, Math.min(R, view.px)); view.py = Math.max(-R, Math.min(R, view.py));
+  }
+  function centerOn(lat, lon) {
+    if (view.globe) { view.lon0 = lon; view.lat0 = lat; view.free = true; return true; }
+    view.free = false; applyCentering();
+    var v = toView(lat, lon), R = Math.min(W, H) * 0.46 * view.zoom;
+    if (v[2] < 0) return false;                            // far side, not visible from Earth
+    view.px = -view.sx * R * v[0]; view.py = view.sy * R * v[1]; clampPan();
+    return true;
+  }
   function toView(lat, lon) {
     var p = vec(lat, lon), cl = Math.cos(view.lon0 * D2R), sl = Math.sin(view.lon0 * D2R);
     var ca = Math.cos(view.lat0 * D2R), sa = Math.sin(view.lat0 * D2R);
@@ -225,7 +271,11 @@
     var img = octx.createImageData(ow, oh), data = img.data;
     var g = geom(), R = g.R * scale, cx = g.cx * scale, cy = g.cy * scale;
     var ca = Math.cos(view.lat0 * D2R), sa = Math.sin(view.lat0 * D2R), cl = Math.cos(view.lon0 * D2R), sl = Math.sin(view.lon0 * D2R);
-    var sv = S.sunVec, term = view.term, gain = view.bright, ovOn = ov.on && !!ov.data, oa = ov.opacity;
+    var sv = S.sunVec, term = view.term, gain = view.bright, oa = ov.opacity, elevOv = ov.id === "elev";
+    var ovOn = ov.on && (elevOv ? !!DEM.dem : !!ov.data), lut = ovOn && elevOv ? elevLut() : null, dem = DEM.dem;
+    var relOn = view.baseMode === 2 && term && !!dem, flat = view.baseMode === 1, rk = view.reliefK, sg = null;
+    if (view.baseMode === 2 && !dem) loadDem();
+    if (relOn) { if (!DEM.slope) DEM.slope = U.demSlopeGrids(dem); sg = DEM.slope; }
     var yMin = Math.max(0, Math.floor(cy - R) - 1), yMax = Math.min(oh - 1, Math.ceil(cy + R) + 1);
     var xMin = Math.max(0, Math.floor(cx - R) - 1), xMax = Math.min(ow - 1, Math.ceil(cx + R) + 1);
     for (var py = yMin; py <= yMax; py++) {
@@ -235,16 +285,24 @@
         if (r2 >= 1) continue;
         var vz = Math.sqrt(1 - r2);
         var y = vy * ca + vz * sa, z1 = -vy * sa + vz * ca, x = vx * cl + z1 * sl, z = -vx * sl + z1 * cl;
-        var la = Math.asin(y) * R2D, lo = Math.atan2(x, z) * R2D, alb = sampleGray(la, lo);
-        var lam = term ? Math.max(0, x * sv[0] + y * sv[1] + z * sv[2]) : Math.pow(vz, 0.45);
+        var la = Math.asin(y) * R2D, lo = Math.atan2(x, z) * R2D, alb = flat ? 0.5 : sampleGray(la, lo), lam;
+        if (!term) lam = Math.pow(vz, 0.45);
+        else if (relOn) lam = U.reliefLambertV(sv, x, y, z, U.gridSample(sg.e, sg.w, sg.h, la, lo) / sg.unit, U.gridSample(sg.n, sg.w, sg.h, la, lo) / sg.unit, rk);
+        else lam = Math.max(0, x * sv[0] + y * sv[1] + z * sv[2]);
         var shade = alb * (0.012 + 0.988 * lam) * gain;
         var edge = Math.min(1, (1 - Math.sqrt(r2)) * R / 1.5);
         var v = Math.min(1, Math.max(0, shade)) * 255, k = (py * ow + px) * 4;
         var rr = v, gg = v * 0.985, bb = v * 0.955;
         if (ovOn) {
-          var oi = ((Math.min(ov.h - 1, Math.max(0, Math.floor((90 - la) / 180 * ov.h)))) * ov.w + Math.min(ov.w - 1, Math.floor((lo + 180) / 360 * ov.w))) * 4;
-          var lit = Math.min(1, v / 255 * 1.6) * oa;
-          rr = rr * (1 - oa) + ov.data[oi] * lit; gg = gg * (1 - oa) + ov.data[oi + 1] * lit; bb = bb * (1 - oa) + ov.data[oi + 2] * lit;
+          var lit = Math.min(1, v / 255 * 1.6) * oa, c0, c1, c2;
+          if (lut) {
+            var li = Math.max(0, Math.min(511, Math.round((U.demHeight(dem, la, lo) + 9500) / 20500 * 511))) * 3;
+            c0 = lut[li]; c1 = lut[li + 1]; c2 = lut[li + 2];
+          } else {
+            var oi = ((Math.min(ov.h - 1, Math.max(0, Math.floor((90 - la) / 180 * ov.h)))) * ov.w + Math.min(ov.w - 1, Math.floor((lo + 180) / 360 * ov.w))) * 4;
+            c0 = ov.data[oi]; c1 = ov.data[oi + 1]; c2 = ov.data[oi + 2];
+          }
+          rr = rr * (1 - oa) + c0 * lit; gg = gg * (1 - oa) + c1 * lit; bb = bb * (1 - oa) + c2 * lit;
         }
         data[k] = rr; data[k + 1] = gg; data[k + 2] = bb; data[k + 3] = 255 * edge;
       }
@@ -293,6 +351,12 @@
     ctx.save(); ctx.strokeStyle = "#7cf0c0"; ctx.fillStyle = "#7cf0c0"; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.arc(q.x, q.y, 9, 0, Math.PI * 2); ctx.moveTo(q.x - 14, q.y); ctx.lineTo(q.x + 14, q.y); ctx.moveTo(q.x, q.y - 14); ctx.lineTo(q.x, q.y + 14); ctx.stroke();
     ctx.font = '600 11px "IBM Plex Mono", monospace'; ctx.textBaseline = "top"; ctx.fillText("Earth overhead", q.x + 12, q.y + 10);
+    // an arrow along the libration: east and north libration point right and up (mirrored with the flips), longer for a larger libration
+    var la = U.librationArrow(S.st.libLon, S.st.libLat), g = geom(), len = Math.max(14, la.mag * D2R * g.R);
+    var ax = q.x + view.sx * Math.cos(la.angle) * len, ay = q.y - view.sy * Math.sin(la.angle) * len, ang = Math.atan2(ay - q.y, ax - q.x);
+    ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(q.x, q.y); ctx.lineTo(ax, ay);
+    ctx.moveTo(ax, ay); ctx.lineTo(ax - 8 * Math.cos(ang - 0.45), ay - 8 * Math.sin(ang - 0.45)); ctx.moveTo(ax, ay); ctx.lineTo(ax - 8 * Math.cos(ang + 0.45), ay - 8 * Math.sin(ang + 0.45)); ctx.stroke();
+    ctx.fillText("Libration " + fmtLon(S.st.libLon) + " " + fmtLat(S.st.libLat), q.x + 12, q.y + 24);
     ctx.restore();
   }
   function drawL100() {
@@ -305,6 +369,24 @@
       ctx.fillText("L" + r[0], q.x + 6, q.y - 8);
     });
     ctx.restore();
+  }
+
+  function drawNotesDb() {
+    if (!db.notes || !db.noteIds.length) return;
+    ctx.save(); ctx.strokeStyle = "#7cf0c0"; ctx.lineWidth = 2;
+    db.noteIds.forEach(function (id) {
+      var f = FEID[id]; if (!f) return;
+      var q = toScreen(f.lat, f.lon);
+      if (q.z < 0.08 || q.x < -20 || q.x > W + 20 || q.y < -20 || q.y > H + 20) return;
+      ctx.beginPath(); ctx.arc(q.x, q.y, 11, 0, Math.PI * 2); ctx.stroke();
+    });
+    ctx.restore();
+  }
+  // ids of the features that have notes saved in this browser
+  function refreshNoteIds() {
+    var ids = [];
+    try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf("oma-notes-") === 0) { var v = JSON.parse(localStorage.getItem(k) || "[]"); if (v && v.length) ids.push(k.slice(10)); } } } catch (e) {}
+    db.noteIds = ids;
   }
 
   var SHORT_RE = /^(Mare|Mons|Montes|Rima|Rimae|Vallis|Dorsum|Dorsa|Catena|Palus|Sinus|Lacus|Oceanus|Promontorium|Rupes|Lacuna|Planitia|Fossa)\s+/;
@@ -346,16 +428,21 @@
       }
       if (view.density <= 0) return;                 // slider fully left: no label text at all, selection ring stays
       if (!view.labels && !isSel) return;
-      var nm = view.shortNames ? shortName(f.name) : f.name;
-      var w = minimal ? 0 : ctx.measureText(nm).width, tx = view.centerLabels ? p.x - w / 2 : p.x + 8, r = [minimal ? p.x - 4 : tx, p.y - 7, minimal ? 8 : w, 14];
+      var nm = view.shortNames ? shortName(f.name) : f.name, star = false;
+      if (!isSel && view.lblStyle) { var lt = U.labelText(f.name, f.type, view.lblStyle); nm = lt.text; star = lt.star; }
+      var w = minimal ? 0 : star ? 9 : ctx.measureText(nm).width, tx = view.centerLabels ? p.x - w / 2 : p.x + 8, r = [minimal ? p.x - 4 : star ? p.x - 5 : tx, p.y - 7, minimal ? 8 : w, 14];
       if (!isSel && overlaps(r)) return;
       placed.push(r);
+      if (star && !minimal) {                        // abbreviated and minimal styles: main features are a star in place of the name
+        ctx.font = '700 18px "Exo 2", system-ui, sans-serif'; ctx.fillStyle = "#f3e9a0"; ctx.fillText("*", p.x - 4, p.y + 5);
+        ctx.font = '600 12px "Exo 2", system-ui, sans-serif'; return;
+      }
       if ((view.marks && !view.centerLabels) || minimal) { ctx.fillStyle = "#ff5a4d"; ctx.beginPath(); ctx.arc(p.x, p.y, view.markSize, 0, Math.PI * 2); ctx.fill(); }
       if (minimal) return;                           // marks only: names appear for the selected feature alone
       ctx.lineWidth = 3; ctx.strokeStyle = "rgba(0,0,0,0.75)"; ctx.strokeText(nm, tx, p.y);
       ctx.fillStyle = isSel ? "#ffd24d" : "#f3e9a0"; ctx.fillText(nm, tx, p.y);
     }
-    if (view.labels && view.density > 0) {
+    if (view.labels && view.density > 0 && db.gaz) {
       for (var i = 0; i < FE.length && count < 220; i++) {
         var f = FE[i];
         if (f.diam * pxPerKm < minPx) break;
@@ -391,11 +478,15 @@
       var s = toScreen(p.lat, p.lon);
       if (s.z > 0) { ctx.beginPath(); ctx.arc(s.x, s.y, 4, 0, Math.PI * 2); ctx.fill(); }
     });
-    if (measure.pts.length === 2) {
-      var pts = gcPoints(measure.pts[0], measure.pts[1], 48).map(function (p) { return toScreen(p.lat, p.lon); });
+    for (var li = 0; li + 1 < measure.pts.length; li++) {
+      var pts = gcPoints(measure.pts[li], measure.pts[li + 1], 48).map(function (p) { return toScreen(p.lat, p.lon); });
       ctx.beginPath(); var first = true;
       pts.forEach(function (q) { if (q.z <= 0) { first = true; return; } if (first) { ctx.moveTo(q.x, q.y); first = false; } else ctx.lineTo(q.x, q.y); });
       ctx.stroke();
+    }
+    if (prof.data && prof.hover >= 0 && prof.data.samples[prof.hover]) {      // the point under the pointer on the profile
+      var hp = prof.data.samples[prof.hover], hs = toScreen(hp.lat, hp.lon);
+      if (hs.z > 0) { ctx.strokeStyle = "#ffffff"; ctx.beginPath(); ctx.arc(hs.x, hs.y, 7, 0, Math.PI * 2); ctx.stroke(); }
     }
     ctx.restore();
   }
@@ -407,7 +498,7 @@
     { id: "cam", name: "Custom camera", mode: "camera", fl: 1000, pw: 4000, ph: 3000, ps: 3.76 },
     { id: "eye", name: "Custom eyepiece (true field circle)", mode: "eye", scope: 1000, eyeFl: 25, afov: 52 }
   ];
-  var fov = { on: false, preset: lsGet("oma-fov-preset", "s50"), vals: {}, rot: 0, user: [] };
+  var fov = { on: false, preset: lsGet("oma-fov-preset", "s50"), vals: {}, rot: 0, user: [], mask: false };
   try { fov.vals = JSON.parse(lsGet("oma-fov-vals", "{}")) || {}; } catch (e) { fov.vals = {}; }
   // the visitor's own cameras and eyepieces, kept in this browser (same fields as the built-in presets, ids start with u)
   try { fov.user = JSON.parse(lsGet("oma-fov-user", "[]")) || []; } catch (e) { fov.user = []; }
@@ -429,11 +520,25 @@
     var w = 2 * Math.atan(p.pw * p.ps / 1000 / (2 * p.fl)) * R2D, h = 2 * Math.atan(p.ph * p.ps / 1000 / (2 * p.fl)) * R2D;
     return { w: w, h: h, circle: false, text: w.toFixed(2) + "° × " + h.toFixed(2) + "°, " + (p.ps / p.fl * 206.265).toFixed(2) + " arcsec/px" };
   }
+  function fovCentre(g) {
+    var c = { x: g.cx, y: g.cy };
+    if (sel) { var s = toScreen(sel.lat, sel.lon); if (s.z > 0) c = s; }
+    return c;
+  }
+  // an eyepiece field with the mask on: clicks outside the circle do nothing (as in Virtual Moon Atlas)
+  function outsideMask(p) {
+    if (!fov.on || !fov.mask || !S.st) return false;
+    var f = fovSize(); if (!f.circle) return false;
+    var g = geom(), c = fovCentre(g), r = g.R * f.w / S.st.diamDeg;
+    return Math.hypot(p.x - c.x, p.y - c.y) > r;
+  }
   function drawFov(g) {
     if (!fov.on || !S.st) return;
-    var f = fovSize(), diam = S.st.diamDeg, c = { x: g.cx, y: g.cy };
-    if (sel) { var s = toScreen(sel.lat, sel.lon); if (s.z > 0) c = s; }
+    var f = fovSize(), diam = S.st.diamDeg, c = fovCentre(g);
     var pw = 2 * g.R * f.w / diam, ph = 2 * g.R * f.h / diam;
+    if (fov.mask && f.circle) {
+      ctx.save(); ctx.fillStyle = "rgba(0,0,0,0.8)"; ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(c.x, c.y, pw / 2, 0, Math.PI * 2, true); ctx.fill("evenodd"); ctx.restore();
+    }
     ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(fov.rot * D2R);
     ctx.strokeStyle = "#ffd24d"; ctx.lineWidth = 1.5; ctx.setLineDash([6, 4]);
     if (f.circle) { ctx.beginPath(); ctx.arc(0, 0, pw / 2, 0, Math.PI * 2); ctx.stroke(); }
@@ -455,7 +560,7 @@
     var g = geom();
     if (view.grid) drawGrid();
     if (view.termLine) drawTerminatorLine();
-    drawL100();
+    drawL100(); drawNotesDb();
     drawLabels(g); drawMeasure(); if (view.earth) drawEarthMark(); drawFov(g); drawScale(g);
     if (exporting) return;
     updateField(g);
@@ -480,7 +585,8 @@
   function updateField(g) {
     var diam = S.st ? S.st.diamDeg : 0.52, arc = W / (2 * g.R) * diam * 60, kmpx = MOON_D_KM / (2 * g.R);
     $("sField").textContent = arc.toFixed(arc < 10 ? 1 : 0) + "', " + kmpx.toFixed(2) + "km/px";
-    $("sCentre").textContent = fmtLon(view.lon0) + " " + fmtLat(view.lat0);
+    var cs = !view.globe && (view.px || view.py) ? fromScreen(W / 2, H / 2) : null;
+    $("sCentre").textContent = cs ? fmtLon(cs.lon) + " " + fmtLat(cs.lat) : fmtLon(view.lon0) + " " + fmtLat(view.lat0);
     var km2 = U.visibleAreaKm2(W, H, kmpx, function (px, py) {
       var vx = view.sx * (px - g.cx) / g.R, vy = view.sy * (g.cy - py) / g.R, r2 = vx * vx + vy * vy;
       return r2 >= 1 ? 0 : Math.sqrt(1 - r2);
@@ -535,6 +641,8 @@
     rows($("fIdentity"), [["Type", f.type], ["IAU type code", f.code], ["Status", f.status], ["Quadrangle", f.quad], ["Gazetteer ID", f.id]]);
     rows($("fPosition"), [["Latitude", fmtLat(f.lat)], ["Longitude", fmtLon(f.lon)]]);
     rows($("fSize"), [["Diameter", f.diam ? fmtKm(f.diam) : "not given"]]);
+    rows($("fRecord"), [["name", f.name], ["code", f.code], ["type", f.type], ["latitude", String(f.lat)], ["longitude", String(f.lon)], ["diameter (km)", f.diam ? String(f.diam) : ""],
+      ["quadrangle", f.quad], ["origin", f.origin], ["status", f.status], ["info", f.info], ["id", f.id]]);
     $("fOrigin").textContent = f.origin || "Not given in the gazetteer.";
     $("fInfo").textContent = f.info || "";
     var at = ATLAS[f.id] || {}, ar = [];
@@ -542,7 +650,6 @@
     ref("Rükl chart", at.r); ref("21st Century Atlas", at.a); ref("North, Observing the Moon", at.n, "pp. ");
     if (!ar.length) ar.push(["References", "none found yet"]);
     rows($("fAtlas"), ar);
-    $("fAtlasNote").textContent = "From the printed indexes, read by OCR and still being verified against the books. (check) means the name matched approximately.";
     $("notesName").textContent = "Notes: " + f.name;
     $("notes").value = ""; renderNotes();
     renderNeighbors(f);
@@ -583,7 +690,7 @@
       var t = document.createElement("strong"); t.textContent = n.type === "obs" ? "Observation" : "Information";
       var w = document.createElement("span"); w.textContent = n.type === "obs" ? "for " + fmtLocal(new Date(n.when)) : "saved " + fmtLocal(new Date(n.saved));
       var del = document.createElement("button"); del.type = "button"; del.textContent = "Delete";
-      del.addEventListener("click", function () { var b = getNotes(); b.splice(idx, 1); putNotes(b); renderNotes(); });
+      del.addEventListener("click", function () { var b = getNotes(); b.splice(idx, 1); putNotes(b); renderNotes(); refreshNoteIds(); requestDraw(); });
       h.appendChild(t); h.appendChild(w); h.appendChild(del);
       var p = document.createElement("p"); p.textContent = n.text;
       li.appendChild(h); li.appendChild(p); ul.appendChild(li);
@@ -592,7 +699,7 @@
   $("noteSave").addEventListener("click", function () {
     var text = $("notes").value.trim(); if (!text || !sel) return;
     var a = getNotes(); a.push({ type: $("noteType").value, text: text, saved: Date.now(), when: S.date.getTime() });
-    putNotes(a); $("notes").value = ""; renderNotes();
+    putNotes(a); $("notes").value = ""; renderNotes(); refreshNoteIds(); requestDraw();
   });
   $("noteNew").addEventListener("click", function () { $("notes").value = ""; $("notes").focus(); });
 
@@ -655,25 +762,39 @@
   function refreshTerminator() {
     var ul = $("termList"); ul.textContent = "";
     if (!FE.length || !S.st) { $("termHint").textContent = ""; return; }
-    var st = S.st, out = [], band = 4;                       // degrees of Sun elevation either side of the terminator
+    var st = S.st, out = [], band = 4, maxA = parseInt($("termAper").value, 10) || 50, dmin = Math.max(2, U.minDiamKm(maxA, st.distKm)), srt = $("termSort").value;
     for (var i = 0; i < FE.length; i++) {
       var f = FE[i];
-      if (f.diam < 15) break;                                // list is sorted by size, large first
+      if (f.diam < dmin) break;                              // list is sorted by size, large first
       var e = E.sunElevation(st, f.lat, f.lon);
       if (Math.abs(e) > band) continue;
       if (E.angDist(st.libLat, st.libLon, f.lat, f.lon) > 88) continue;   // on the far side from Earth
-      out.push({ f: f, e: e, morning: E.norm180(f.lon - st.sunLon) < 0 });
+      var ap = U.apertureMm(f.diam, st.distKm);
+      if (ap > maxA) continue;
+      out.push({ f: f, e: e, ap: ap, morning: E.norm180(f.lon - st.sunLon) < 0 });
     }
-    $("termHint").textContent = out.length ? "Larger features within " + band + "° of Sun elevation of the terminator, facing Earth. Sunrise side is the morning terminator." : "No features of 15 km or more are on the terminator facing Earth right now.";
-    out.sort(function (a, b) { return b.f.diam - a.f.diam; });
-    out.slice(0, 40).forEach(function (o) {
+    var cmp = { size: function (a, b) { return b.f.diam - a.f.diam; }, name: function (a, b) { return a.f.name.localeCompare(b.f.name); },
+                aper: function (a, b) { return a.ap - b.ap || b.f.diam - a.f.diam; }, lat: function (a, b) { return b.f.lat - a.f.lat; } };
+    out.sort(cmp[srt] || cmp.size);
+    var shown = out.slice(0, 200);
+    $("termHint").textContent = out.length ? out.length + " features within " + band + "° of Sun elevation of the terminator, facing Earth" + (out.length > shown.length ? ", the first " + shown.length + " shown" : "") +
+      ". Sunrise side is the morning terminator. Instrument is the smallest aperture that shows the feature, estimated from its size alone (Dawes limit, three resolution elements across), not a rating of how easy it is."
+      : "No features needing " + (maxA === 999 ? "any size of telescope" : maxA + " mm or less") + " are on the terminator facing Earth right now.";
+    shown.forEach(function (o) {
       var li = document.createElement("li"), b = document.createElement("button");
       b.type = "button"; b.textContent = o.f.name;
-      var sp = document.createElement("span"); sp.textContent = (o.morning ? "sunrise" : "sunset") + " " + o.e.toFixed(1) + "°";
+      var sp = document.createElement("span"); sp.textContent = o.ap + " mm, " + (o.morning ? "sunrise" : "sunset") + " " + o.e.toFixed(1) + "°";
       b.appendChild(sp); b.addEventListener("click", function () { select(o.f, true); });
       li.appendChild(b); ul.appendChild(li);
     });
   }
+  $("termAper").addEventListener("change", refreshTerminator);
+  $("termSort").addEventListener("change", refreshTerminator);
+  $("ephCopy").addEventListener("click", function () {
+    var k = $("ephTable").children, out = ["Observer " + fmtLat(obs.lat) + " " + fmtLon(obs.lon) + ", " + obs.alt + " m"];
+    for (var i = 0; i + 1 < k.length; i += 2) out.push(k[i].textContent + ": " + k[i + 1].textContent);
+    copyText(out.join("\n"));
+  });
 
   /* ---- features: load, search, list -------------------------------------------------------------- */
   function loadAtlas() {
@@ -684,6 +805,7 @@
       FE = j.rows.map(function (r) {
         return { name: r[0], code: r[1], type: r[2], lat: r[3], lon: r[4], diam: r[5], quad: r[6], origin: r[7], status: r[8], info: r[9], id: r[10], lname: r[0].toLowerCase() };
       });
+      FE.forEach(function (f) { FEID[f.id] = f; });
       buildFilter(); $("dbCount").textContent = FE.length.toLocaleString();
       var c = FE.filter(function (f) { return f.name === "Copernicus"; })[0] || FE[0];
       sel = c;
@@ -705,7 +827,7 @@
       if (!hit && isFinite(lat) && isFinite(lon)) hit = { name: name, code: "", type: "Lunar 100 target", lat: lat, lon: lon, diam: 0, quad: "", origin: "", status: "", info: "Position from the Lunar 100 list.", id: "L100-" + ln, lname: ln };
       if (hit) sel = hit;
     }
-    if (isFinite(lat) && isFinite(lon)) { view.lon0 = lon; view.lat0 = lat; view.free = true; }
+    if (isFinite(lat) && isFinite(lon)) centerOn(lat, lon);
     if (isFinite(z)) setZoom(z);
   }
   function findMatches(q) {
@@ -720,7 +842,7 @@
   }
   function select(f, center) {
     sel = f; markHidden = false;
-    if (center) { view.lon0 = f.lon; view.lat0 = f.lat; view.free = true; }
+    if (center && !centerOn(f.lat, f.lon)) note(f.name + " is on the far side. Turn on Full globe to see it.");
     showFeature(); scheduleList();
   }
   $("find").addEventListener("input", function () {
@@ -741,7 +863,7 @@
   var listTimer = null;
   function scheduleList() { clearTimeout(listTimer); listTimer = setTimeout(refreshList, 200); }
   function refreshList() {
-    if ($("paneList").hidden || !FE.length) return;
+    if ($("paneList").hidden || !FE.length || !db.gaz) { if (!$("paneList").hidden && !db.gaz) { $("listHint").textContent = "The gazetteer is switched off in Map layers."; $("flist").textContent = ""; } return; }
     var g = geom(), pxPerKm = 2 * g.R / MOON_D_KM, out = [];
     for (var i = 0; i < FE.length && out.length < 60; i++) {
       var f = FE[i];
@@ -782,7 +904,7 @@
   $("filtAll").addEventListener("click", function () { setAllTypes(true); });
   $("filtNone").addEventListener("click", function () { setAllTypes(false); });
 
-  var POPS = [["popLayers", "tLayers"], ["popFilter", "tFilter"], ["popFov", "tFov"], ["popScope", "tScope"]];
+  var POPS = [["popLayers", "tLayers"], ["popFilter", "tFilter"], ["popFov", "tFov"], ["popScope", "tScope"], ["popProfile", "tProfile"]];
   function togglePop(id) {
     POPS.forEach(function (p) {
       var el = $(p[0]), on = p[0] === id && el.hidden;
@@ -842,11 +964,12 @@
     lsSet("oma-fov-user", JSON.stringify(fov.user)); lsSet("oma-fov-vals", JSON.stringify(fov.vals)); lsSet("oma-fov-preset", fov.preset);
     fovFill(); requestDraw();
   });
+  $("fovMask").addEventListener("change", function () { fov.mask = $("fovMask").checked; if (fov.mask) fov.on = true; requestDraw(); });
   $("fovOff").addEventListener("click", function () { fov.on = false; $("popFov").hidden = true; $("tFov").setAttribute("aria-pressed", "false"); requestDraw(); });
   $("tFov").addEventListener("click", function () { if (!$("popFov").hidden) fov.on = true; fovFill(); requestDraw(); });
 
   /* ---- toolbar -------------------------------------------------------------------------------------- */
-  function setZoom(v) { view.zoom = Math.max(1, Math.min(8, v)); $("zoom").value = view.zoom; bumpInteract(); requestDraw(); }
+  function setZoom(v) { view.zoom = Math.max(1, Math.min(8, v)); $("zoom").value = view.zoom; if (view.globe || view.zoom <= 1.001) { view.px = 0; view.py = 0; } else clampPan(); bumpInteract(); requestDraw(); }
   $("zoom").addEventListener("input", function (e) { setZoom(parseFloat(e.target.value)); });
   $("density").addEventListener("input", function (e) { view.density = parseFloat(e.target.value); requestDraw(); });
   $("bright").addEventListener("input", function (e) { view.bright = parseFloat(e.target.value); requestDraw(); });
@@ -868,7 +991,17 @@
   toggle("tFlipEW", function (on) { view.sx = on ? -1 : 1; });
   toggle("tLib", function (on) { view.libr = on; view.free = false; applyCentering(); });
   $("zoomPre").addEventListener("change", function () { var v = parseFloat($("zoomPre").value); if (v) setZoom(v); $("zoomPre").value = ""; });
-  $("tFull").addEventListener("click", function () { view.free = false; view.zoom = 1; $("zoom").value = 1; applyCentering(); bumpInteract(); requestDraw(); });
+  // VMA's Full Globe button: down is a free-rotating globe (libration off, centred on 0, 0, orbit controls shown), up is the Earth view. Dragging rotates in both
+  var libBeforeGlobe = true;
+  function globeMode(on) {
+    if (on === !!view.globe) return;
+    view.globe = on; view.free = false; view.px = 0; view.py = 0; setPressed("tFull", on);
+    $("orbitGroup").hidden = !on; $("tLib").disabled = on;
+    if (on) { libBeforeGlobe = view.libr; view.libr = false; setPressed("tLib", false); }
+    else { orbitSet(0); view.libr = libBeforeGlobe; setPressed("tLib", view.libr); }
+    applyCentering(); bumpInteract(); requestDraw();
+  }
+  $("tFull").addEventListener("click", function () { globeMode(!view.globe); });
   $("dt0h").addEventListener("click", function () {
     var p = U.zoneParts(S.date, zone); setLive(false); setDate(U.fromZoneParts(p.y, p.mo, p.d, 0, 0, zone));
   });
@@ -881,19 +1014,59 @@
   $("markSize").addEventListener("input", function () { view.markSize = parseFloat($("markSize").value); requestDraw(); });
   $("renderDetail").addEventListener("change", function () { view.detail = parseInt($("renderDetail").value, 10); requestDraw(); });
   $("gridStep").addEventListener("change", function () { view.gridStep = parseInt($("gridStep").value, 10); requestDraw(); });
+  // overlays: category, then origin, then the overlay itself, as in Virtual Moon Atlas
+  function ovFill() {
+    function fill(id, vals, keep, any) {
+      var sl = $(id), cur = keep; sl.textContent = "";
+      var o0 = document.createElement("option"); o0.value = ""; o0.textContent = any; sl.appendChild(o0);
+      vals.forEach(function (v) { var o = document.createElement("option"); o.value = v; o.textContent = v; sl.appendChild(o); });
+      sl.value = vals.indexOf(cur) >= 0 ? cur : "";
+    }
+    function uniq(list, k) { var a = []; list.forEach(function (o) { if (a.indexOf(o[k]) < 0) a.push(o[k]); }); return a; }
+    fill("ovCat", uniq(OVERLAYS, "cat"), $("ovCat").value, "All categories");
+    var inCat = OVERLAYS.filter(function (o) { return !$("ovCat").value || o.cat === $("ovCat").value; });
+    fill("ovOrigin", uniq(inCat, "origin"), $("ovOrigin").value, "All origins");
+    var inBoth = inCat.filter(function (o) { return !$("ovOrigin").value || o.origin === $("ovOrigin").value; }), sl = $("ovPick");
+    sl.textContent = "";
+    inBoth.forEach(function (o) { var op = document.createElement("option"); op.value = o.id; op.textContent = o.name; sl.appendChild(op); });
+    if (inBoth.some(function (o) { return o.id === ov.id; })) sl.value = ov.id; else if (inBoth.length) { sl.value = inBoth[0].id; ov.id = inBoth[0].id; }
+    var cur = OVERLAYS.filter(function (o) { return o.id === ov.id; })[0];
+    $("ovNote").textContent = cur ? cur.note : "";
+    $("ovOn").disabled = !inBoth.length;
+  }
+  $("ovCat").addEventListener("change", function () { ovFill(); if (ov.on) ovNeeds(); requestDraw(); });
+  $("ovOrigin").addEventListener("change", function () { ovFill(); if (ov.on) ovNeeds(); requestDraw(); });
+  $("ovPick").addEventListener("change", function () { ov.id = $("ovPick").value; ovFill(); if (ov.on) ovNeeds(); requestDraw(); });
   $("ovOn").addEventListener("change", function () {
-    ov.on = $("ovOn").checked; if (ov.on) loadOverlay(); requestDraw();
+    ov.on = $("ovOn").checked; if (ov.on) ovNeeds(); requestDraw();
   });
   $("ovOpacity").addEventListener("input", function () { ov.opacity = parseFloat($("ovOpacity").value); requestDraw(); });
+  ovFill();
+  // map style: texture, no texture (an overlay shown alone), or the phase lit over the elevation
+  function baseModeUi() {
+    var m = view.baseMode;
+    $("reliefKRow").hidden = m !== 2;
+    $("baseModeNote").textContent = m === 1 ? "No texture is drawn, so an overlay shows alone. The overlay has been switched on."
+      : m === 2 ? "Each point is lit by the real Sun on the LOLA slope (about 3.8 km per pixel), so only large relief shows and there are no cast shadows. Best with the high-Sun base map and the terminator on."
+      : "";
+  }
+  $("baseMode").addEventListener("change", function () {
+    view.baseMode = parseInt($("baseMode").value, 10) || 0;
+    if (view.baseMode === 1 && !ov.on) { ov.on = true; $("ovOn").checked = true; ovNeeds(); }
+    if (view.baseMode === 2) loadDem();
+    baseModeUi(); requestDraw();
+  });
+  $("reliefK").addEventListener("change", function () { view.reliefK = parseFloat($("reliefK").value) || 3; requestDraw(); });
+  $("lblStyle").addEventListener("change", function () { view.lblStyle = parseInt($("lblStyle").value, 10) || 0; requestDraw(); });
   $("phPrev").addEventListener("click", function () { var q = E.prevQuarter(S.date); if (q) { setLive(false); setDate(q.time); } });
   $("phNext").addEventListener("click", function () { var q = E.nextQuarters(new Date(S.date.getTime() + 60000))[0]; if (q) { setLive(false); setDate(q.time); } });
-  function libJump(sign) { var t = E.nextLibrationExtreme(S.date, sign); if (t) { setLive(false); view.libr = true; $("tLib").setAttribute("aria-pressed", "true"); view.free = false; setDate(t); } }
+  function libJump(sign) { var t = E.nextLibrationExtreme(S.date, sign); if (t) { globeMode(false); setLive(false); view.libr = true; $("tLib").setAttribute("aria-pressed", "true"); view.free = false; setDate(t); } }
   $("libEast").addEventListener("click", function () { libJump(1); });
   $("libWest").addEventListener("click", function () { libJump(-1); });
   // as in Virtual Moon Atlas: at 1:1 the button restores the Earth view, zoomed in it centers the selected feature
   $("tCenter").addEventListener("click", function () {
-    if (view.zoom <= 1.001) { view.free = false; applyCentering(); requestDraw(); }
-    else if (sel) { view.lon0 = sel.lon; view.lat0 = sel.lat; view.free = true; requestDraw(); }
+    if (view.zoom <= 1.001) { view.free = false; view.px = 0; view.py = 0; applyCentering(); requestDraw(); }
+    else if (sel) { centerOn(sel.lat, sel.lon); requestDraw(); }
   });
   $("tClearMark").addEventListener("click", function () { markHidden = true; requestDraw(); });
 
@@ -994,6 +1167,41 @@
   $("lightDlg").addEventListener("close", function () { if (light.url) { URL.revokeObjectURL(light.url); light.url = null; $("lightImg").removeAttribute("src"); } });
   window.addEventListener("resize", function () { if ($("lightDlg").open) lightApply(); });
 
+  /* ---- picture of the selected feature: the WAC map around it at a zoom that frames it, in the preview window ------------------- */
+  function featurePicture() {
+    var f = sel; if (!f || !W) return;
+    var zoom = Math.max(1, Math.min(40, 3777 / (3 * Math.max(f.diam, 10)))), halfKm = 3777 / zoom / 2, halfLat = halfKm / (MOON_R_KM * D2R);
+    var halfLon = Math.min(180, halfLat / Math.max(0.2, Math.cos(f.lat * D2R)));
+    note("Fetching the map around " + f.name + ", one moment.");
+    var keys = [];
+    for (var ty = Math.floor((90 - Math.min(90, f.lat + halfLat)) / 180 * TROWS); ty <= Math.floor((90 - Math.max(-90, f.lat - halfLat)) / 180 * TROWS); ty++) {
+      for (var u = Math.floor((f.lon - halfLon + 180) / 360 * TCOLS); u <= Math.floor((f.lon + halfLon + 180) / 360 * TCOLS); u++) {
+        var tx = ((u % TCOLS) + TCOLS) % TCOLS; if (ty >= 0 && ty < TROWS) keys.push(ty * TCOLS + tx);
+      }
+    }
+    var t0 = Date.now();
+    (function poll() {
+      keys.forEach(function (k) { reqTile(k % TCOLS, Math.floor(k / TCOLS)); });
+      var left = keys.filter(function (k) { return !TIL[k] && !TILFAIL[k]; }).length;
+      if (left && Date.now() - t0 < 5000) { setTimeout(poll, 120); return; }
+      var keep = { lon0: view.lon0, lat0: view.lat0, px: view.px, py: view.py, zoom: view.zoom, free: view.free, grid: view.grid, termLine: view.termLine, earth: view.earth, labels: view.labels, sx: view.sx, sy: view.sy };
+      var keepMark = markHidden, keepFov = fov.on, keepL100 = L100.on, keepNotes = db.notes, keepMeasure = measure.pts, cv;
+      view.lon0 = f.lon; view.lat0 = f.lat; view.px = 0; view.py = 0; view.zoom = zoom; view.free = true; view.grid = false; view.termLine = false; view.earth = false; view.labels = false; view.sx = 1; view.sy = 1;
+      markHidden = true; fov.on = false; L100.on = false; db.notes = false; measure.pts = [];
+      try { cv = renderPicture(1500); }
+      finally {
+        for (var k in keep) view[k] = keep[k];
+        markHidden = keepMark; fov.on = keepFov; L100.on = keepL100; db.notes = keepNotes; measure.pts = keepMeasure; requestDraw();
+      }
+      cv.toBlob(function (b) {
+        if (!b) { note("The browser could not make that picture."); return; }
+        if (measure.on) $("readoutText").textContent = "Click two points to measure. Esc to stop."; else $("readout").hidden = true;
+        lightOpen(URL.createObjectURL(b), f.name + " (" + f.type + (f.diam ? ", " + fmtKm(f.diam) : "") + "), " + layer.short + ", Sun as at " + fmtLocal(S.date) + ". Picture about " + Math.round(halfKm * 2) + " km across.");
+      }, "image/png");
+    })();
+  }
+  $("fPicture").addEventListener("click", featurePicture);
+
   $("tMeasure").addEventListener("click", function () {
     measure.on = !measure.on; measure.pts = [];
     $("tMeasure").setAttribute("aria-pressed", measure.on ? "true" : "false");
@@ -1017,6 +1225,89 @@
   $("copyCoord").addEventListener("click", function () {
     copyText(measure.pts.map(function (p, i) { return "P" + (i + 1) + " " + fmtLat(p.lat) + " " + fmtLon(p.lon); }).join("; "));
   });
+
+  /* ---- height profile along the measured line (LOLA elevation, data/dem) ---------------------------------------------- */
+  var PROF_M = { l: 58, r: 10, t: 8, b: 26 }, PROF_HELP = "Use the Measure tool: click two points, Shift-click adds legs. The height along the line is drawn here.";
+  function css(name, d) { var v = getComputedStyle(document.documentElement).getPropertyValue(name); return (v && v.trim()) || d; }
+  function niceStep(range, target) {
+    var raw = Math.max(range, 1e-9) / target, mag = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10)), n = raw / mag;
+    return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * mag;
+  }
+  function profileDraw() {
+    var cv = $("profCanvas"), c = cv.getContext("2d"), w = cv.width, h = cv.height, d = prof.data;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, w, h);
+    c.fillStyle = css("--stage", "#03050a"); c.fillRect(0, 0, w, h);
+    if (!d) return;
+    var cw = w - PROF_M.l - PROF_M.r, chh = h - PROF_M.t - PROF_M.b, ext = U.profileExtent(d.km, d.hmin, d.hmax, prof.scale, cw, chh);
+    prof.ext = ext; prof.box = { x: PROF_M.l, y: PROF_M.t, w: cw, h: chh };
+    function X(km) { return PROF_M.l + (km - ext.x0) / (ext.x1 - ext.x0) * cw; }
+    function Y(m) { return PROF_M.t + chh - (m - ext.y0) / (ext.y1 - ext.y0) * chh; }
+    var ink = css("--ink-dim", "#9bb0c6"), grid = css("--line-soft", "#223044"), acc = css("--accent", "#5aa9ff"), v;
+    var sx = niceStep(ext.x1 - ext.x0, 6), sy = niceStep(ext.y1 - ext.y0, 5);
+    c.font = '11px "IBM Plex Mono", monospace'; c.lineWidth = 1; c.fillStyle = ink; c.strokeStyle = grid;
+    c.textBaseline = "top"; c.textAlign = "center";
+    for (v = 0; v <= ext.x1 + 1e-9; v += sx) { c.beginPath(); c.moveTo(X(v), PROF_M.t); c.lineTo(X(v), PROF_M.t + chh); c.stroke(); c.fillText(v === 0 ? "Start" : String(+v.toFixed(2)), X(v), PROF_M.t + chh + 6); }
+    c.textAlign = "right"; c.textBaseline = "middle";
+    for (v = Math.ceil(ext.y0 / sy) * sy; v <= ext.y1; v += sy) { c.beginPath(); c.moveTo(PROF_M.l, Y(v)); c.lineTo(PROF_M.l + cw, Y(v)); c.stroke(); c.fillText(String(Math.round(v)), PROF_M.l - 6, Y(v)); }
+    c.save(); c.beginPath(); c.rect(PROF_M.l, PROF_M.t, cw, chh); c.clip();
+    c.beginPath(); d.samples.forEach(function (p, i) { if (i) c.lineTo(X(p.km), Y(p.h)); else c.moveTo(X(p.km), Y(p.h)); });
+    c.lineWidth = 1.6; c.strokeStyle = acc; c.stroke();
+    c.lineTo(X(d.km), PROF_M.t + chh); c.lineTo(X(0), PROF_M.t + chh); c.closePath(); c.globalAlpha = 0.18; c.fillStyle = acc; c.fill(); c.globalAlpha = 1;
+    c.lineWidth = 1; c.strokeStyle = "#ff5a4d"; d.joints.forEach(function (km) { c.beginPath(); c.moveTo(X(km), PROF_M.t); c.lineTo(X(km), PROF_M.t + chh); c.stroke(); });
+    if (prof.hover >= 0 && d.samples[prof.hover]) { var hp = d.samples[prof.hover]; c.fillStyle = "#fff"; c.beginPath(); c.arc(X(hp.km), Y(hp.h), 3.5, 0, Math.PI * 2); c.fill(); }
+    c.restore();
+    c.fillStyle = ink; c.textAlign = "left"; c.textBaseline = "top"; c.fillText("m", 4, PROF_M.t); c.textAlign = "right"; c.fillText("km", w - 4, h - 14);
+  }
+  function profileCompute() {
+    if (measure.pts.length < 2) { prof.data = null; prof.hover = -1; profileDraw(); $("profInfo").textContent = PROF_HELP; $("profPos").textContent = ""; return; }
+    if (DEM.failed) { $("profInfo").textContent = "The elevation data could not be loaded."; return; }
+    $("profInfo").textContent = "Reading the elevation data";
+    loadDem(function () {
+      if (measure.pts.length < 2) return;
+      var a = measure.pts[0], z = measure.pts[measure.pts.length - 1], legs = measure.pts.length - 1;
+      prof.data = U.demProfile(DEM.dem, measure.pts, 2); prof.hover = -1;
+      $("profInfo").textContent = "From " + fmtLon(a.lon) + " " + fmtLat(a.lat) + " to " + fmtLon(z.lon) + " " + fmtLat(z.lat) + (legs > 1 ? " in " + legs + " legs" : "") +
+        ". Length " + prof.data.km.toFixed(1) + " km, elevation from " + Math.round(prof.data.hmin) + " m to " + Math.round(prof.data.hmax) + " m, from LOLA at 8 pixels per degree.";
+      profileDraw(); requestDraw();
+    });
+  }
+  [["profK1", 1], ["profK2", 2], ["profK5", 5], ["profK10", 10], ["profK0", 0]].forEach(function (b) {
+    $(b[0]).addEventListener("click", function () {
+      prof.scale = b[1];
+      [["profK1", 1], ["profK2", 2], ["profK5", 5], ["profK10", 10], ["profK0", 0]].forEach(function (o) { $(o[0]).setAttribute("aria-pressed", o[1] === prof.scale ? "true" : "false"); });
+      profileDraw();
+    });
+  });
+  $("profCanvas").addEventListener("pointermove", function (e) {
+    var d = prof.data, b = prof.box, ext = prof.ext; if (!d || !b) return;
+    var cv = $("profCanvas"), r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / (r.width || 1) * cv.width;
+    var km = ext.x0 + (x - b.x) / b.w * (ext.x1 - ext.x0);
+    if (km < 0 || km > d.km) { prof.hover = -1; $("profPos").textContent = ""; profileDraw(); requestDraw(); return; }
+    var lo = 0, hi = d.samples.length - 1;                   // nearest sample by distance (they are in order)
+    while (hi - lo > 1) { var mid = (lo + hi) >> 1; if (d.samples[mid].km < km) lo = mid; else hi = mid; }
+    var i = Math.abs(d.samples[lo].km - km) <= Math.abs(d.samples[hi].km - km) ? lo : hi, sm = d.samples[i];
+    prof.hover = i; $("profPos").textContent = "Distance " + sm.km.toFixed(2) + " km, elevation " + Math.round(sm.h) + " m, " + fmtLon(sm.lon) + " " + fmtLat(sm.lat);
+    profileDraw(); requestDraw();
+  });
+  $("profCanvas").addEventListener("pointerleave", function () { if (prof.hover >= 0) { prof.hover = -1; $("profPos").textContent = ""; profileDraw(); requestDraw(); } });
+  function saveBlob(b, name) {
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(b); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+  }
+  $("profSave").addEventListener("click", function () {
+    if (!prof.data) return;
+    var z = U.zoneParts(S.date, zone), nm = "oma-profile-" + z.y + pad(z.mo) + pad(z.d) + "-" + pad(z.h) + pad(z.mi);
+    if ($("profFmt").value === "csv") saveBlob(new Blob([U.profileCsv(prof.data)], { type: "text/csv" }), nm + ".csv");
+    else $("profCanvas").toBlob(function (b) { if (b) saveBlob(b, nm + ".png"); }, "image/png");
+  });
+  $("tProfile").addEventListener("click", function () {      // opened: start measuring if the Measure tool is not on, then draw what is measured
+    if ($("popProfile").hidden) return;
+    loadDem(); if (!measure.on) $("tMeasure").click();
+    profileCompute();
+  });
+  $("profHide").addEventListener("click", function () { togglePop("popProfile"); });
 
   $("mAbout").addEventListener("click", function () { $("aboutDlg").showModal(); });
 
@@ -1095,29 +1386,52 @@
   /* ---- orbit the Moon: the view turns about the polar axis at a chosen rate -------------------------------------- */
   // "<" moves the surface to the left on screen (the view longitude increases), ">" to the right. Speed is degrees of
   // longitude per second; the 10, 5, 1, 0.5 and 0.2 steps follow Virtual Moon Atlas, whose unit is not documented.
-  var orbit = { dir: 0, last: 0, frames: 0, mark: 0, raf: 0 };
+  // Inclination 0 turns the view about the polar axis and keeps its latitude. Any other inclination moves the view centre along a
+  // circular path tilted to the equator by that angle (negative runs the other way), through the current centre. Altitude is the
+  // height of the viewing spacecraft in km: moving the slider sets the zoom to the area such a spacecraft sees (a rough equivalent,
+  // the atlas draws an orthographic globe).
+  var orbit = { dir: 0, last: 0, frames: 0, mark: 0, raf: 0, axis: null, p: null };
   function orbitUi() {
     $("orbL").setAttribute("aria-pressed", orbit.dir > 0 ? "true" : "false");
     $("orbR").setAttribute("aria-pressed", orbit.dir < 0 ? "true" : "false");
     if (!orbit.dir) $("orbFps").textContent = "";
+  }
+  function orbitAim() {                                  // path through the current centre for the chosen inclination
+    var inc = parseFloat($("orbInc").value) || 0;
+    if (!inc) { orbit.axis = null; return; }
+    var o = U.orbitPole(view.lat0, view.lon0, inc);
+    orbit.axis = o.pole; orbit.p = o.p;
   }
   function orbitTick(ts) {
     if (!orbit.dir) { orbit.raf = 0; return; }
     var dt = Math.min(0.25, (ts - orbit.last) / 1000), step = parseFloat($("orbSpeed").value) || 1;
     orbit.last = ts; orbit.frames++;
     if (ts - orbit.mark >= 1000) { $("orbFps").textContent = Math.round(orbit.frames * 1000 / (ts - orbit.mark)) + " fps"; orbit.frames = 0; orbit.mark = ts; }
-    view.lon0 = E.norm180(view.lon0 + orbit.dir * step * dt); view.free = true;
+    if (orbit.axis) {
+      var inc = parseFloat($("orbInc").value) || 0;
+      orbit.p = U.rotateAbout(orbit.p, orbit.axis, orbit.dir * (inc < 0 ? -1 : 1) * step * dt);
+      var c = U.fromVec(orbit.p); view.lon0 = c.lon; view.lat0 = c.lat;
+    } else view.lon0 = E.norm180(view.lon0 + orbit.dir * step * dt);
+    view.free = true;
     bumpInteract(); requestDraw();
     orbit.raf = requestAnimationFrame(orbitTick);
   }
   function orbitSet(dir) {
     orbit.dir = dir; orbitUi();
+    if (dir) orbitAim();
     if (dir && !orbit.raf) { orbit.last = performance.now(); orbit.mark = orbit.last; orbit.frames = 0; orbit.raf = requestAnimationFrame(orbitTick); }
   }
   $("orbL").addEventListener("click", function () { orbitSet(orbit.dir > 0 ? 0 : 1); });
   $("orbR").addEventListener("click", function () { orbitSet(orbit.dir < 0 ? 0 : -1); });
   $("orbStop").addEventListener("click", function () { orbitSet(0); });
   $("orbDir").addEventListener("click", function () { if (orbit.dir) orbitSet(-orbit.dir); });
+  $("orbAlt").addEventListener("input", function () {
+    var a = parseFloat($("orbAlt").value) || 800; $("orbAltOut").textContent = a + " km"; setZoom(U.orbitZoom(a));
+  });
+  $("orbInc").addEventListener("input", function () {
+    var i = parseFloat($("orbInc").value) || 0; $("orbIncOut").textContent = i + "°";
+    if (orbit.dir) orbitAim();
+  });
   canvas.addEventListener("pointerdown", function () { if (orbit.dir) orbitSet(0); });
 
   /* ---- full screen, text size ------------------------------------------------------------------------------------ */
@@ -1148,18 +1462,21 @@
     view.term = true; view.grid = false; view.labels = true; view.density = 0.5; view.bright = 1.6; view.libr = true; view.free = false;
     view.manualSun = false; view.scale = true; view.shortNames = false; view.marks = true; view.centerLabels = false; view.gridStep = 30;
     view.termLine = false; view.earth = false; view.markSize = 2.5; view.marksOnly = false; view.detail = 1200; view.sx = 1; view.sy = 1;
-    ov.on = false; ov.opacity = 0.5; markHidden = false;
+    ov.on = false; ov.opacity = 0.5; markHidden = false; view.baseMode = 0; view.reliefK = 3; view.lblStyle = 0; fov.mask = false;
+    globeMode(false); view.libr = true;
     setPressed("tTerm", true); setPressed("tLib", true); setPressed("tGrid", false); setPressed("tLabels", true); setPressed("tFlipNS", false); setPressed("tFlipEW", false);
     setCtl("density", 0.5); setCtl("bright", 1.6); setCtl("sunManual", false); $("sun").disabled = true;
     setCtl("oScale", true); setCtl("oMarks", true); setCtl("oCenter", false); setCtl("oTermLine", false); setCtl("oEarth", false);
     setCtl("oShort", false); setCtl("oMarksOnly", false); setCtl("markSize", 2.5); setCtl("renderDetail", 1200); setCtl("gridStep", 30);
-    setCtl("ovOn", false); setCtl("ovOpacity", 0.5);
+    setCtl("ovOn", false); setCtl("ovOpacity", 0.5); setCtl("baseMode", 0); setCtl("reliefK", 3); setCtl("lblStyle", 0); setCtl("fovMask", false); baseModeUi();
     for (var t in view.hidden) delete view.hidden[t];
     Array.prototype.forEach.call($("filterList").querySelectorAll("input"), function (c) { c.checked = true; });
     recompute();
   });
 
-  /* ---- databases: the gazetteer, plus the Lunar 100 targets as a second set -------------------------------------- */
+  /* ---- databases: the gazetteer, the Lunar 100 targets, and the features you have notes on -------------------------------- */
+  $("dbGaz").addEventListener("change", function () { db.gaz = $("dbGaz").checked; requestDraw(); scheduleList(); });
+  $("dbNotes").addEventListener("change", function () { db.notes = $("dbNotes").checked; refreshNoteIds(); requestDraw(); });
   $("dbL100").addEventListener("change", function () {
     L100.on = $("dbL100").checked;
     if (L100.on && !L100.rows) {
@@ -1221,6 +1538,25 @@
     if (!GL.list) fetch("data/glossary/glossary.json").then(function (r) { return r.json(); }).then(glBuild)
       .catch(function () { $("glEntry").textContent = "The glossary could not be loaded."; });
   });
+  // encyclopedia: every glossary term on one scrolling page, grouped, with a search box (our own short definitions)
+  function encRender() {
+    var box = $("encBody"), q = $("encFind").value.trim().toLowerCase(), last = "", n = 0;
+    box.textContent = "";
+    GL.list.forEach(function (e) {
+      if (q && e.t.toLowerCase().indexOf(q) < 0 && e.d.toLowerCase().indexOf(q) < 0) return;
+      if (e.c !== last) { var h = document.createElement("h3"); h.textContent = e.c; box.appendChild(h); last = e.c; }
+      var t = document.createElement("h4"), d = document.createElement("p"); t.textContent = e.t; d.textContent = e.d; box.appendChild(t); box.appendChild(d); n++;
+    });
+    if (!n) { var p = document.createElement("p"); p.textContent = "No term matches."; box.appendChild(p); }
+  }
+  $("mEncyclopedia").addEventListener("click", function () {
+    $("encDlg").showModal();
+    if (GL.list) { encRender(); return; }
+    fetch("data/glossary/glossary.json").then(function (r) { return r.json(); }).then(function (j) { glBuild(j); encRender(); })
+      .catch(function () { $("encBody").textContent = "The encyclopedia could not be loaded."; });
+  });
+  $("encFind").addEventListener("input", function () { if (GL.list) encRender(); });
+  $("encClose").addEventListener("click", function () { $("encDlg").close(); });
   $("glPrev").addEventListener("click", function () { glShow(GL.idx - 1); });
   $("glNext").addEventListener("click", function () { glShow(GL.idx + 1); });
   $("glClose").addEventListener("click", function () { $("glossDlg").close(); });
@@ -1281,10 +1617,10 @@
         var o = document.createElement("option"); o.value = d.DeviceNumber; o.textContent = d.DeviceName + " (device " + d.DeviceNumber + ")"; sl.appendChild(o);
       });
       sl.hidden = !sl.children.length; sMsg(sl.children.length ? "Pick a telescope, then Connect." : "The server lists no telescope.");
-      if (sl.children.length) $("aDevice").value = sl.value;
+      if (sl.children.length) { $("aDevice").value = sl.value; $("aDevName").value = sl.children[0].textContent; }
     }).catch(sFail);
   });
-  $("aDevList").addEventListener("change", function () { $("aDevice").value = $("aDevList").value; });
+  $("aDevList").addEventListener("change", function () { $("aDevice").value = $("aDevList").value; $("aDevName").value = Array.prototype.filter.call($("aDevList").children, function (o) { return o.value === $("aDevList").value; }).map(function (o) { return o.textContent; })[0] || ""; });
   $("aConfig").addEventListener("click", function () { window.open(sClient().setupUrl(), "_blank", "noopener"); });
   $("aAbout").addEventListener("click", function () {
     sClient().description().then(function (d) { sMsg("Server: " + [d.ServerName, d.Manufacturer, d.ManufacturerVersion, d.Location].filter(Boolean).join(", ")); }).catch(sFail);
@@ -1339,7 +1675,7 @@
   var drag = null;
   function pos(e) { var r = canvas.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
   canvas.addEventListener("pointerdown", function (e) {
-    var p = pos(e); drag = { x: p.x, y: p.y, lon0: view.lon0, lat0: view.lat0, moved: false };
+    var p = pos(e); drag = { x: p.x, y: p.y, lon0: view.lon0, lat0: view.lat0, px0: view.px, py0: view.py, moved: false };
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener("pointermove", function (e) {
@@ -1347,7 +1683,9 @@
     if (drag) {
       var dx = p.x - drag.x, dy = p.y - drag.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
-      if (drag.moved) {
+      if (drag.moved && !view.globe) {                    // Earth view: move the picture, the sphere does not turn
+        view.px = drag.px0 + dx; view.py = drag.py0 + dy; clampPan(); bumpInteract(); requestDraw();
+      } else if (drag.moved) {
         var k = 1 / (g.R * D2R);
         view.lon0 = drag.lon0 - view.sx * dx * k / Math.max(0.2, Math.cos(view.lat0 * D2R));
         view.lat0 = Math.max(-85, Math.min(85, drag.lat0 + view.sy * dy * k));
@@ -1358,22 +1696,28 @@
     }
     var s = fromScreen(p.x, p.y);
     $("sLon").textContent = s ? fmtLon(s.lon) : "—"; $("sLat").textContent = s ? fmtLat(s.lat) : "—";
+    if (!s) $("sElev").textContent = "—";
+    else if (DEM.dem) $("sElev").textContent = (Math.round(U.demHeight(DEM.dem, s.lat, s.lon) / 10) * 10).toLocaleString() + " m";
+    else { $("sElev").textContent = "…"; loadDem(); }
   });
   canvas.addEventListener("pointerup", function (e) {
     if (drag && !drag.moved) {
       var p = pos(e), s = fromScreen(p.x, p.y);
       if (measure.on) {
-        if (s) {
-          if (measure.pts.length >= 2) measure.pts = [];
-          measure.pts.push(s);
-          if (measure.pts.length === 2) {
-            var r = distBearing(measure.pts[0], measure.pts[1]);
-            measure.text = "Distance " + r.km.toFixed(1) + " km (great circle), bearing " + r.bearing.toFixed(0) + "°";
-            $("readoutText").textContent = measure.text + ". Click to measure again, Esc to stop."; $("readoutActions").hidden = false;
+        if (s && !outsideMask(p)) {
+          if (e.shiftKey && measure.pts.length >= 2) measure.pts.push(s);       // Shift-click adds another leg
+          else { if (measure.pts.length >= 2) measure.pts = []; measure.pts.push(s); }
+          if (measure.pts.length >= 2) {
+            var legs = measure.pts.length - 1, tot = 0, r = null;
+            for (var li = 0; li < legs; li++) { r = distBearing(measure.pts[li], measure.pts[li + 1]); tot += r.km; }
+            measure.text = legs === 1 ? "Distance " + r.km.toFixed(1) + " km (great circle), bearing " + r.bearing.toFixed(0) + "°"
+              : "Total " + tot.toFixed(1) + " km over " + legs + " legs, last leg " + r.km.toFixed(1) + " km, bearing " + r.bearing.toFixed(0) + "°";
+            $("readoutText").textContent = measure.text + ". Click to measure again, Shift-click adds a leg, Esc to stop."; $("readoutActions").hidden = false;
           } else { $("readoutText").textContent = "Click a second point."; $("readoutActions").hidden = true; }
+          if (!$("popProfile").hidden) profileCompute();
           requestDraw();
         }
-      } else {
+      } else if (!outsideMask(pos(e)) && db.gaz) {
         var g = geom(), pxPerKm = 2 * g.R / MOON_D_KM, best = null, bd = 1e9;
         for (var i = 0; i < FE.length; i++) {
           var f = FE[i], sizePx = f.diam * pxPerKm;

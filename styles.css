@@ -432,3 +432,17 @@ dialog.glossary::backdrop { background: rgba(0, 0, 0, 0.6); }
 .scope-pad button:hover:not(:disabled) { color: var(--ink); border-color: var(--accent); }
 .scope-pad button:disabled { opacity: 0.4; cursor: default; }
 .scope-pad .pad-rate { grid-column: 2 / 4; flex-direction: row; align-items: center; gap: 0.3rem; }
+
+/* ---- parity batch 3: profile, encyclopedia, record, terminator controls ------------------------------------------ */
+#popProfile { width: min(640px, calc(100% - 1.5rem)); }
+#profCanvas { width: 100%; height: auto; aspect-ratio: 600 / 260; background: var(--stage); border: 1px solid var(--line); border-radius: 8px; touch-action: none; }
+.prof-pos { min-height: 1.1em; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 0.72rem; color: var(--ink-dim); }
+.pop-actions select { font: inherit; font-size: 0.75rem; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 0.2rem 0.3rem; }
+.rec { margin-top: 1rem; }
+.rec summary { cursor: pointer; font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace; font-size: 0.7rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 0.4rem; }
+.rec summary:hover { color: var(--ink); }
+.light-bar input[type="search"] { font: inherit; font-size: 0.8rem; color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 0.2rem 0.5rem; min-width: 0; width: 14rem; }
+.enc-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0.4rem 1.2rem 1rem; }
+.enc-body h3 { font-family: "Audiowide", "Arial Narrow", sans-serif; font-weight: 400; color: var(--accent); font-size: 1rem; margin: 1.2rem 0 0.3rem; }
+.enc-body h4 { margin: 0.8rem 0 0; font-size: 0.92rem; font-weight: 600; color: var(--ink); }
+.enc-body p { font-size: 0.88rem; color: var(--ink-dim); margin: 0.2rem 0 0; }

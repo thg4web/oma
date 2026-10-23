@@ -32,6 +32,7 @@
   <symbol id="i-orbit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5"/><ellipse cx="12" cy="12" rx="10" ry="4.5" transform="rotate(-25 12 12)"/></symbol>
   <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
   <symbol id="i-scope" viewBox="0 0 24 24"><path d="m4 14 12-6 2 4-12 6zM16 8l3-1.5M10 17l-2 4M9 18l5 3"/></symbol>
+  <symbol id="i-profile" viewBox="0 0 24 24"><path d="M3 18 8 9l4 5 3-7 6 11M3 21h18"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2"/></symbol>
 </svg>
 
@@ -41,6 +42,7 @@
   <nav class="menubar" aria-label="Menu">
     <button type="button" id="mAbout">About &amp; credits</button>
     <button type="button" id="mGlossary">Glossary</button>
+    <button type="button" id="mEncyclopedia">Encyclopedia</button>
     <a href="lunar100.html">Lunar 100</a>
     <a href="https://astro.thgnetworks.com">Henderson Astronomy</a>
   </nav>
@@ -62,7 +64,7 @@
     <select id="zoomPre" aria-label="Zoom presets">
       <option value="">Zoom to</option><option value="1">1:1</option><option value="2">2x</option><option value="4">4x</option><option value="8">8x</option>
     </select>
-    <button class="tool-more-btn" id="tFull" type="button" title="Whole Moon, centered as seen from Earth now">Full globe</button>
+    <button class="tool-more-btn" id="tFull" type="button" aria-pressed="false" title="On: a 3D globe you can turn by dragging, libration off, centred on 0, 0, orbit controls shown. Off: the Earth view, where dragging moves the picture">Full globe</button>
   </div>
   <div class="tool-group datebar">
     <canvas id="phaseIcon" width="30" height="30" title="Moon phase" aria-label="Moon phase"></canvas>
@@ -97,6 +99,7 @@
   <div class="tool-more" id="toolMore">
     <div class="tool-group">
       <button class="tool" id="tMeasure" type="button" aria-pressed="false" title="Measure a distance (click two points, Esc to clear)" aria-label="Measure distance"><svg><use href="#i-ruler"/></svg></button>
+      <button class="tool" id="tProfile" type="button" aria-pressed="false" title="Height profile between two clicked points (LOLA elevation)" aria-label="Height profile"><svg><use href="#i-profile"/></svg></button>
       <button class="tool" id="tSnap" type="button" title="Save a picture of the view" aria-label="Save picture"><svg><use href="#i-camera"/></svg></button>
       <button class="tool" id="tFov" type="button" aria-pressed="false" title="Telescope, camera and eyepiece fields" aria-label="Field of view frames"><svg><use href="#i-fov"/></svg></button>
       <button class="tool" id="tLayers" type="button" aria-pressed="false" title="Map layers" aria-label="Map layers"><svg><use href="#i-layers"/></svg></button>
@@ -114,7 +117,10 @@
       <label class="slider-label"><input id="oCenter" type="checkbox"> Centered labels</label>
       <label class="slider-label"><input id="oMarksOnly" type="checkbox"> Marks only</label>
       <label class="slider-label"><input id="oTermLine" type="checkbox"> Terminator line</label>
-      <label class="slider-label"><input id="oEarth" type="checkbox"> Mark sub-Earth point</label>
+      <label class="slider-label" title="Marks the sub-Earth point and an arrow along the libration, longer for a larger libration"><input id="oEarth" type="checkbox"> Mark maximum libration</label>
+      <label class="slider-label" title="Full names; Abbreviated shows main features as a star and satellite craters as Cop A; Minimal shows a star and just the letter">Labels
+        <select id="lblStyle" aria-label="Label style"><option value="0" selected>Full</option><option value="1">Abbreviated</option><option value="2">Minimal</option></select>
+      </label>
       <label class="slider-label">Mark size
         <input id="markSize" type="range" min="1" max="8" step="0.5" value="2.5" aria-label="Mark size">
       </label>
@@ -136,11 +142,11 @@
     </div>
     <div class="tool-group opts">
       <label class="slider-label">Render detail
-        <select id="renderDetail" aria-label="Render detail"><option value="800">Fast</option><option value="1200" selected>Normal</option><option value="1800">High</option></select>
+        <select id="renderDetail" aria-label="Render detail"><option value="400">Coarsest</option><option value="600">Coarse</option><option value="800">Fast</option><option value="1200" selected>Normal</option><option value="1800">High</option><option value="2400">Finest</option></select>
       </label>
       <button class="tool-more-btn" id="dispDefault" type="button" title="Put the display options back to their defaults">Default</button>
     </div>
-    <div class="tool-group opts" id="orbitGroup">
+    <div class="tool-group opts" id="orbitGroup" hidden>
       <svg class="ico" aria-hidden="true"><use href="#i-orbit"/></svg>
       <button class="tool-more-btn" id="orbL" type="button" aria-pressed="false" title="Orbit the Moon, features move left (east to west view)" aria-label="Orbit left">&lt;</button>
       <button class="tool-more-btn" id="orbStop" type="button" title="Stop the orbit" aria-label="Stop orbit">Stop</button>
@@ -148,6 +154,12 @@
       <button class="tool-more-btn" id="orbDir" type="button" title="Reverse the direction">Reverse</button>
       <label class="slider-label">Speed
         <select id="orbSpeed" aria-label="Orbit speed"><option value="10">10&deg;/s</option><option value="5">5&deg;/s</option><option value="1" selected>1&deg;/s</option><option value="0.5">0.5&deg;/s</option><option value="0.2">0.2&deg;/s</option></select>
+      </label>
+      <label class="slider-label" title="Altitude of the viewing spacecraft: sets the zoom to the area it would see">Altitude
+        <input id="orbAlt" type="range" min="100" max="2000" step="50" value="800" aria-label="Orbit altitude in kilometres"><output id="orbAltOut">800 km</output>
+      </label>
+      <label class="slider-label" title="Tilt of the orbit to the equator; negative runs the other way. 0 keeps the view latitude">Inclination
+        <input id="orbInc" type="range" min="-90" max="90" step="5" value="0" aria-label="Orbit inclination in degrees"><output id="orbIncOut">0&deg;</output>
       </label>
       <output id="orbFps" class="slider-label" aria-label="Refresh rate"></output>
     </div>
@@ -178,13 +190,27 @@
         <select id="layerBase"></select>
       </label>
       <p class="hint" id="layerNote"></p>
-      <label class="chk"><input type="checkbox" id="ovOn"> Geology overlay (USGS Unified Geologic Map, CC0)</label>
+      <label>Map style
+        <select id="baseMode" aria-label="Map style"><option value="0" selected>Texture (the base map above)</option><option value="1">No texture (use with an overlay)</option><option value="2">Phase with relief (lit over LOLA elevation)</option></select>
+      </label>
+      <label id="reliefKRow" hidden>Relief exaggeration
+        <select id="reliefK" aria-label="Relief exaggeration"><option value="1">1x</option><option value="2">2x</option><option value="3" selected>3x</option><option value="5">5x</option><option value="10">10x</option></select>
+      </label>
+      <p class="hint" id="baseModeNote"></p>
+      <h3>Overlay</h3>
+      <div class="pop-row">
+        <label>Category <select id="ovCat" aria-label="Overlay category"></select></label>
+        <label>Origin <select id="ovOrigin" aria-label="Overlay origin"></select></label>
+      </div>
+      <label>Overlay <select id="ovPick" aria-label="Overlay"></select></label>
+      <label class="chk"><input type="checkbox" id="ovOn"> Show the overlay</label>
       <label>Overlay opacity <input type="range" id="ovOpacity" min="0.1" max="1" step="0.05" value="0.5"></label>
-      <p class="hint">Colours show geologic units. Fortezzo, Spudis and Harrel (2020), USGS.</p>
+      <p class="hint" id="ovNote"></p>
       <h3>Databases</h3>
-      <label class="chk"><input type="checkbox" checked disabled> IAU / USGS gazetteer (<span id="dbCount">9,190</span> named features)</label>
+      <label class="chk"><input type="checkbox" checked id="dbGaz"> IAU / USGS gazetteer (<span id="dbCount">9,190</span> named features)</label>
       <label class="chk"><input type="checkbox" id="dbL100"> Lunar 100 targets (ring the targets that have a position)</label>
-      <p class="hint">User and connected databases (the DatLun applet in Virtual Moon Atlas) are not part of this atlas yet.</p>
+      <label class="chk"><input type="checkbox" id="dbNotes"> My notes (ring the features you have written notes on)</label>
+      <p class="hint">The notes are kept in this browser. User and connected databases (the DatLun applet in Virtual Moon Atlas) are not part of this atlas.</p>
     </div>
 
     <div class="pop" id="popFilter" hidden role="dialog" aria-label="Feature types">
@@ -193,8 +219,25 @@
       <div class="pop-actions"><button type="button" id="filtAll">All</button><button type="button" id="filtNone">None</button></div>
     </div>
 
+    <div class="pop" id="popProfile" hidden role="dialog" aria-label="Height profile">
+      <h3>Height profile</h3>
+      <p class="hint" id="profInfo">Use the Measure tool: click two points (Shift-click adds more legs). The height along the line is drawn here.</p>
+      <canvas id="profCanvas" width="600" height="260" aria-label="Elevation along the measured line"></canvas>
+      <output id="profPos" class="prof-pos" aria-live="off"></output>
+      <div class="pop-actions" role="group" aria-label="Vertical exaggeration">
+        <button type="button" id="profK1">1x</button><button type="button" id="profK2">2x</button><button type="button" id="profK5">5x</button><button type="button" id="profK10">10x</button><button type="button" id="profK0" aria-pressed="true">Max</button>
+      </div>
+      <div class="pop-actions">
+        <select id="profFmt" aria-label="Save as"><option value="png">as PNG picture</option><option value="csv">as CSV file</option></select>
+        <button type="button" id="profSave">Save profile</button><button type="button" id="profHide">Hide</button>
+      </div>
+      <p class="hint">Elevation: LOLA, NASA / GSFC / LRO, averaged to about 3.8 km. Smaller features are smoothed away.</p>
+    </div>
+
     <div class="pop" id="popScope" hidden role="dialog" aria-label="Telescope">
       <h3>Telescope (ASCOM Alpaca)</h3>
+      <label>Interface <select id="aIface" aria-label="Telescope interface"><option value="alpaca" selected>ASCOM Alpaca</option><option value="indi" disabled>INDI (needs a TCP bridge, not available in a browser)</option></select></label>
+      <label>Selected telescope <input id="aDevName" type="text" readonly placeholder="none chosen (device number below)"></label>
       <label>Host <input id="aHost" type="text" value="localhost" autocomplete="off"></label>
       <div class="pop-row">
         <label>Port <input id="aPort" type="number" min="1" max="65535" value="11111"></label>
@@ -240,6 +283,7 @@
         <label>Eyepiece focal length (mm) <input id="eyeFl" type="number" min="1" step="0.5"></label>
         <label>Eyepiece apparent field (&deg;) <input id="eyeAfov" type="number" min="1" step="1"></label>
       </div>
+      <label class="chk"><input type="checkbox" id="fovMask"> Darken outside an eyepiece field</label>
       <label>Rotation (&deg;) <input id="fovRot" type="number" min="-180" max="180" step="1" value="0"></label>
       <p class="hint" id="fovInfo"></p>
       <label>Save these values as <input id="fovName" type="text" maxlength="40" placeholder="Name, for example C8 with ASI224"></label>
@@ -262,6 +306,7 @@
       </nav>
       <h2 class="feature-name" id="fName">LOADING</h2>
       <p class="feature-sub" id="fSub"></p>
+      <p><button type="button" class="tool-more-btn" id="fPicture" title="Picture of this feature from the LRO WAC map, with zoom">Picture</button></p>
       <h3 id="secIdentity">Identity</h3>
       <dl id="fIdentity"></dl>
       <h3 id="secPosition">Position</h3>
@@ -273,12 +318,15 @@
       <p id="fSunNote"></p>
       <h3 id="secAtlas">Atlas references</h3>
       <dl id="fAtlas"></dl>
-      <p class="caveat" id="fAtlasNote"></p>
       <h3 id="secNeighbor">Neighbors</h3>
       <ul class="flist" id="fNeighbors"></ul>
       <h3 id="secOrigin">Name origin</h3>
       <p id="fOrigin"></p>
       <p class="caveat" id="fInfo"></p>
+      <details class="rec">
+        <summary>Gazetteer record - Facts and Figures</summary>
+        <dl class="eph" id="fRecord"></dl>
+      </details>
     </div>
 
     <div class="tab-body" id="paneNotes" role="tabpanel" aria-labelledby="tabNotes" hidden>
@@ -312,6 +360,7 @@
         <p class="hint">Saved in this browser only. The time zone sets how every time on the page is shown and entered. City list is approximate, to about 0.01&deg;.</p>
       </details>
       <dl id="ephTable" class="eph"></dl>
+      <div class="obs"><button type="button" id="ephCopy" class="tool-more-btn">Copy the ephemeris</button></div>
       <h3 class="eph-h">Phases and libration</h3>
       <div class="obs">
         <button type="button" id="phPrev" class="tool-more-btn">&#9664; Previous phase</button>
@@ -323,6 +372,14 @@
         <button type="button" id="libWest" class="tool-more-btn">Next greatest west libration</button>
       </div>
       <h3 class="eph-h">Features on the terminator</h3>
+      <div class="obs">
+        <label>Telescope aperture up to
+          <select id="termAper" aria-label="Largest aperture, millimetres"><option value="5">5 mm</option><option value="30">30 mm</option><option value="50" selected>50 mm</option><option value="100">100 mm</option><option value="150">150 mm</option><option value="250">250 mm</option><option value="999">any</option></select>
+        </label>
+        <label>Sort by
+          <select id="termSort" aria-label="Sort the list"><option value="size" selected>Size</option><option value="name">Name</option><option value="aper">Instrument</option><option value="lat">Latitude</option></select>
+        </label>
+      </div>
       <p class="hint" id="termHint"></p>
       <ul class="flist" id="termList"></ul>
       <p class="hint" id="ephTzHint">Times are in your local time. Positions from astronomy-engine, libration and Sun from Meeus ch. 53 (optical libration only).</p>
@@ -359,8 +416,9 @@
   <p><strong>Observer's Moon Atlas</strong> is a free, open-source web Moon atlas in the spirit of Virtual Moon Atlas. Code: GPL-3.0-or-later, see LICENSE and NOTICE.</p>
   <ul>
     <li><strong>Imagery:</strong> LRO WAC mosaic, LROC / ASU / NASA (public data). Tiles prepared for the web from the texture slices distributed with Virtual Moon Atlas, with thanks to Christian Legrand and Patrick Chevalley.</li>
+    <li><strong>Elevation:</strong> LOLA, NASA / GSFC / LRO (Lunar Orbiter Laser Altimeter shape map LDEM_16), averaged to 8 pixels per degree. NASA data are not copyrighted.</li>
     <li><strong>Feature names, positions, sizes and name origins:</strong> IAU / USGS Gazetteer of Planetary Nomenclature (IAU 2024 edition).</li>
-    <li><strong>Atlas references:</strong> chart and page numbers from the printed indexes of R&uuml;kl, <em>Atlas of the Moon</em>; Wood and Collins, <em>21st Century Atlas of the Moon</em>; and North, <em>Observing the Moon</em>. Read from the books by OCR and still being verified.</li>
+    <li><strong>Atlas references:</strong> chart and page numbers from the printed indexes of R&uuml;kl, <em>Atlas of the Moon</em>; Wood and Collins, <em>21st Century Atlas of the Moon</em>; and North, <em>Observing the Moon</em>. Read from the books by OCR and still being verified; "(check)" beside an entry means it is not yet confirmed.</li>
     <li><strong>Ephemeris:</strong> <a href="https://github.com/cosinekitty/astronomy" target="_blank" rel="noopener">astronomy-engine</a> by Don Cross, MIT license. Selenographic Sun and libration after Meeus, <em>Astronomical Algorithms</em>, ch. 53.</li>
     <li><strong>Glossary and city list:</strong> short definitions and approximate city coordinates written for this atlas.</li>
     <li><strong>Inspiration:</strong> Virtual Moon Atlas by Christian Legrand and Patrick Chevalley, <a href="https://www.ap-i.net" target="_blank" rel="noopener">ap-i.net</a>.</li>
@@ -372,6 +430,7 @@
     <li>Set any date and time with the date box, or press Now or Live. The Sun, phase and libration follow it.</li>
     <li>Find searches all named features. The In view tab lists what you are looking at.</li>
     <li>More tools: distance measuring, pictures of the view (PNG, JPG or BMP, up to 3000 px), telescope and camera frames, layers and labels, terminator line, orbit the Moon, and telescope control over ASCOM Alpaca.</li>
+    <li>Height profile (More tools): measure a line, Shift-click adds legs, and the LOLA height along it is plotted. Map layers holds the map style, overlays and databases; the Picture button in the Information tab shows the selected feature.</li>
     <li>The Ephemeris tab holds your location, altitude and time zone, and lists the larger features on the terminator now.</li>
   </ul>
   <p class="hint">Development build.</p>
@@ -390,6 +449,16 @@
     <nav class="gloss-tree" id="glTree" aria-label="Glossary terms"></nav>
     <article class="gloss-entry" id="glEntry" aria-live="polite"></article>
   </div>
+</dialog>
+
+<dialog id="encDlg" class="glossary" aria-label="Encyclopedia">
+  <div class="light-bar">
+    <strong>Encyclopedia</strong>
+    <input id="encFind" type="search" placeholder="Search the terms" aria-label="Search the encyclopedia" autocomplete="off">
+    <span class="spacer"></span>
+    <button type="button" id="encClose" class="tool-more-btn">Close</button>
+  </div>
+  <div class="enc-body" id="encBody"></div>
 </dialog>
 
 <dialog id="lightDlg" class="lightbox" aria-label="Picture preview">
